@@ -1,0 +1,42 @@
+# ============================================================
+# FestaCMS Plugin — SmSik Game
+# ============================================================
+
+# === Системные файлы OS ===
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# === Файлы IDE и редакторов ===
+.vscode/
+.idea/
+*.swp
+*~
+
+# === Логи и временные файлы ===
+*.log
+logs/
+*.tmp
+*.temp
+*.cache
+
+# === Специфика FestaCMS ===
+# Runtime-конфиги плагинов (не публикуем)
+*.runtime.php
+config.runtime.php
+
+# Кеши плагинов
+*.cache.php
+
+# Бэкапы и черновики
+*.bak
+*.backup
+*_backup*
+*_old*
+
+# === Node (на будущее) ===
+node_modules/
+package-lock.json
+
+# === Локальные сборки Pixi (если будем качать) ===
+/vendor/
