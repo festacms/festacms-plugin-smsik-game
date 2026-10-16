@@ -1,0 +1,146 @@
+/* ============================================================
+   Спарк: Космическая Доставка
+   Стили игрового модуля для страницы 404 FestaCMS
+   v0.6.0
+   ============================================================ */
+
+/* ============ КОНТЕЙНЕР ИГРЫ ============ */
+.starfall-stage {
+    position: fixed;
+    inset: 0;
+    width: 100vw;
+    height: 100vh;
+    z-index: 9999;
+    background: #000104;
+    overflow: hidden;
+    margin: 0;
+    padding: 0;
+}
+
+/* Canvas от Pixi — заполняет весь контейнер */
+.starfall-stage canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+/* Скрыть скролл, пока игра открыта */
+body.starfall-page {
+    overflow: hidden;
+}
+
+/* ============ FALLBACK: NOSCRIPT ============ */
+.spark-noscript {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem;
+    color: #e0eaed;
+    font-family: Arial, sans-serif;
+}
+
+.spark-noscript h1 {
+    font-size: clamp(24px, 5vw, 42px);
+    margin-bottom: 1rem;
+    color: #64C8BD;
+}
+
+.spark-noscript p {
+    font-size: clamp(14px, 3vw, 18px);
+    color: #8fa8b0;
+    max-width: 480px;
+    line-height: 1.6;
+}
+
+/* ============ FALLBACK: НЕТ WEBGL ============ */
+.spark-no-webgl {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 2rem;
+    color: #e0eaed;
+    font-family: Arial, sans-serif;
+    background: #000104;
+    z-index: 10;
+}
+
+.spark-no-webgl h1 {
+    font-size: clamp(24px, 5vw, 42px);
+    margin-bottom: 1rem;
+    color: #FB7E87;
+}
+
+.spark-no-webgl p {
+    font-size: clamp(14px, 3vw, 18px);
+    color: #8fa8b0;
+    max-width: 480px;
+    line-height: 1.6;
+}
+
+/* Когда браузер не поддерживает WebGL — скрываем canvas */
+.starfall-stage.is-no-webgl canvas {
+    display: none;
+}
+
+/* ============================================================ */
+/* === ЗАГОТОВКИ ДЛЯ OVERLAYS (v0.7+) ======================== */
+/* ============================================================ */
+/* Пока не используются, но стили уже готовы.                     */
+/* Когда сделаем стартовый экран и магазин на Pixi —               */
+/* этим блокам найдётся применение.                               */
+/* ============================================================ */
+
+.spark-overlay {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(8, 15, 18, 0.85);
+    backdrop-filter: blur(8px);
+    -webkit-backdrop-filter: blur(8px);
+    z-index: 100;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.3s ease, visibility 0.3s ease;
+}
+
+.spark-overlay.is-open {
+    opacity: 1;
+    visibility: visible;
+}
+
+.spark-overlay-content {
+    text-align: center;
+    max-width: 560px;
+    padding: 2rem;
+    color: #e0eaed;
+    font-family: Arial, sans-serif;
+}
+
+/* ============ АДАПТИВНОСТЬ ============ */
+@media (max-width: 640px) {
+    .starfall-stage {
+        /* На мобильных — динамическая высота (с учётом адресной строки) */
+        height: 100vh;
+        height: 100dvh;
+    }
+}
+
+/* Уважаем настройку "уменьшить движение" */
+@media (prefers-reduced-motion: reduce) {
+    .spark-overlay {
+        transition: none;
+    }
+}
