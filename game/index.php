@@ -77,6 +77,9 @@ $moduleUrl = '/plugins/spark-game';
 <!-- UI: overlays, меню, магазин -->
 <script src="<?= $moduleUrl ?>/game/js/spark-ui.js?v=0.6.0"></script>
 
+<!-- Космический фон -->
+<script src="<?= $moduleUrl ?>/game/js/spark-background.js?v=0.6.1"></script>
+
 <!-- Игровая логика (PixiGame) -->
 <script src="<?= $moduleUrl ?>/game/js/spark-core.js?v=0.6.0"></script>
 

@@ -2,11 +2,10 @@
  * FestaCMS — Спарк: Космическая Доставка
  * Игровая логика (PixiGame)
  *
- * v0.6.0:
- *   - Использует SmsikGame.CFG и SmsikGame.utils из spark-config.js
- *   - Использует FestaSprites из spark-sprites.js
- *   - Заготовки вызовов SmsikGame.Audio и SmsikGame.UI
- *   - Вся игровая логика сохранена из v0.5
+ * v0.6.1:
+ *   - Подключён модуль космического фона (SmsikGame.Background)
+ *   - Фон обновляется в _tick
+ *   - Пересоздаётся при resize
  *
  * Файл разбит на 3 части для удобства копирования.
  * Это ЧАСТЬ 1/3: конструктор, инициализация, фон, игрок.
@@ -138,7 +137,7 @@
         this.W = this.app.screen.width;
         this.H = this.app.screen.height;
 
-        // === Скрываем DOM старой версии (если остались) ===
+        // === Скрываем DOM старой версии ===
         var hideSelectors = [
             '.starfall-hud',
             '.starfall-fire-btn',
@@ -159,6 +158,12 @@
         // === Создаём всё ===
         this._createBackground();
         this._createParticleLayer();
+
+        // === Космический фон (туманности, планеты, кометы) ===
+        if (SmsikGame.Background) {
+            SmsikGame.Background.init(this.app, this.W, this.H);
+        }
+
         this._createPlayer();
         this._createHud();
         this._createFlashOverlay();
@@ -171,7 +176,7 @@
         this.running = true;
         this.app.ticker.add(this._boundTick);
 
-        console.log('[PixiGame] v0.6.0 запущена');
+        console.log('[PixiGame] v0.6.1 запущена');
     };
 
     // ============================================================
@@ -297,7 +302,7 @@
         this.player.height = CFG.PLAYER_SIZE * 2.4;
         this.playerContainer.addChild(this.player);
 
-        // Пушка (в руках)
+        // Пушка
         var gunTex = this.textures.gun;
         if (gunTex) {
             this.gunSprite = new PIXI.Sprite(gunTex);
@@ -310,7 +315,6 @@
             this.playerContainer.addChild(this.gunSprite);
         }
     };
-
     // ============================================================
     // === HUD ====================================================
     // ============================================================
@@ -506,6 +510,19 @@
             this.bgSprite.width = this.W;
             this.bgSprite.height = this.H;
         }
+
+        // Пересоздать космический фон под новый размер
+        if (SmsikGame.Background && SmsikGame.Background.layer) {
+            if (SmsikGame.Background.layer.parent) {
+                SmsikGame.Background.layer.parent.removeChild(SmsikGame.Background.layer);
+            }
+            SmsikGame.Background.layer.destroy({ children: true });
+            SmsikGame.Background.nebulas = [];
+            SmsikGame.Background.planets = [];
+            SmsikGame.Background.comets = [];
+            SmsikGame.Background.init(this.app, this.W, this.H);
+        }
+
         if (this.playerContainer) {
             this.playerContainer.y = this.H - 70;
             this.playerContainer.x = clamp(this.playerContainer.x, 40, this.W - 40);
@@ -544,6 +561,7 @@
         }
 
         this._updateBackground(k);
+        if (SmsikGame.Background) SmsikGame.Background.update(k);
         this._updatePlayer(k);
         this._updateWeapon(k);
         this._updateItems(k);
@@ -673,7 +691,6 @@
 
         if (SmsikGame.Audio) SmsikGame.Audio.playShoot();
     };
-
     // ============================================================
     // === СПАВН ПРЕДМЕТОВ ========================================
     // ============================================================
@@ -923,7 +940,6 @@
             eb.sprite.x += eb.vx * k;
             eb.life -= 1 * k;
 
-            // Попадание в игрока
             if (this.playerContainer) {
                 var dx = eb.sprite.x - this.playerContainer.x;
                 var dy = eb.sprite.y - this.playerContainer.y;
@@ -1394,6 +1410,6 @@
     // Экспорт класса в SmsikGame
     SmsikGame.PixiGame = PixiGame;
 
-    console.log('[Core] Часть 3/3 загружена. spark-core.js собран полностью (v0.6.0)');
+    console.log('[Core] Часть 3/3 загружена. spark-core.js собран полностью (v0.6.1)');
 
 })();
