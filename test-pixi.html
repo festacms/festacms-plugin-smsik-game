@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Pixi.js — тест производительности</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html, body { width: 100%; height: 100%; overflow: hidden; background: #000; }
+        #stage { position: absolute; inset: 0; }
+        #fps {
+            position: fixed; top: 10px; left: 10px;
+            font: bold 18px monospace; color: #64C8BD;
+            background: rgba(0,0,0,0.6); padding: 8px 14px;
+            border-radius: 8px; z-index: 100;
+        }
+        #info {
+            position: fixed; top: 10px; right: 10px;
+            font: bold 14px monospace; color: #FFD280;
+            background: rgba(0,0,0,0.6); padding: 8px 14px;
+            border-radius: 8px; z-index: 100; text-align: right;
+        }
+        #controls {
+            position: fixed; bottom: 20px; left: 50%;
+            transform: translateX(-50%);
+            display: flex; gap: 10px; z-index: 100;
+        }
+        button {
+            padding: 10px 20px; font-size: 14px; font-weight: 700;
+            background: #64C8BD; color: #0a1a18; border: none;
+            border-radius: 8px; cursor: pointer;
+        }
+        button:hover { background: #7fdbd0; }
+        button.active { background: #FB7E87; color: white; }
+    </style>
+</head>
+<body>
+    <div id="fps">FPS: --</div>
+    <div id="info">Pixi: --<br>Размер: --</div>
+    <div id="stage"></div>
+    <div id="controls">
+        <button id="btn1" data-count="10">10 объектов</button>
+        <button id="btn2" data-count="100">100 объектов</button>
+        <button id="btn3" data-count="500" class="active">500 объектов</button>
+        <button id="btn4" data-count="2000">2000 объектов</button>
+    </div>
+
+    <!-- Pixi.js с CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.4.2/dist/pixi.min.js"></script>
+
+    <script>
+    (function () {
+        'use strict';
+
+        if (typeof PIXI === 'undefined') {
+            document.getElementById('fps').textContent = 'Pixi не загрузился!';
+            return;
+        }
+
+        // === Создаём Pixi-приложение на весь экран ===
+        var app = new PIXI.Application({
+            width: window.innerWidth,
+            height: window.innerHeight,
+            background: 0x000104,
+            antialias: false,
+            resolution: Math.min(window.devicePixelRatio || 1, 2),
+            autoDensity: true,
+            powerPreference: 'high-performance',
+        });
+
+        document.getElementById('stage').appendChild(app.view);
+
+        // === Информация о размере ===
+        var infoEl = document.getElementById('info');
+        infoEl.innerHTML = 'Pixi: ' + PIXI.VERSION
+            + '<br>Размер: ' + app.renderer.width + '×' + app.renderer.height
+            + '<br>DPR: ' + app.renderer.resolution.toFixed(2);
+
+        // === Создаём SVG-круг как спрайт ===
+        var svg = '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" width="100" height="100">'
+            + '<circle cx="50" cy="50" r="40" fill="#64C8BD" stroke="#0a1a18" stroke-width="2"/>'
+            + '<circle cx="40" cy="45" r="6" fill="#fff"/>'
+            + '<circle cx="60" cy="45" r="6" fill="#fff"/>'
+            + '<circle cx="41" cy="46" r="2.5" fill="#0a1a18"/>'
+            + '<circle cx="61" cy="46" r="2.5" fill="#0a1a18"/>'
+            + '<path d="M 42 62 Q 50 68 58 62" stroke="#0a1a18" stroke-width="2" fill="none" stroke-linecap="round"/>'
+            + '</svg>';
+
+        var blob = new Blob([svg], { type: 'image/svg+xml;charset=utf-8' });
+        var url = URL.createObjectURL(blob);
+
+        var loader = PIXI.Assets ? PIXI.Assets.load(url) : PIXI.Texture.fromURL(url);
+
+        Promise.resolve(loader).then(function (texture) {
+            if (texture.baseTexture) texture = texture;
+            var tex = texture.baseTexture ? texture : PIXI.Texture.from(texture);
+
+            startTest(tex);
+        }).catch(function (err) {
+            console.error('Ошибка загрузки спрайта:', err);
+            // Пробуем старый способ
+            var img = new Image();
+            img.onload = function () {
+                var tex = PIXI.Texture.from(img);
+                startTest(tex);
+            };
+            img.src = url;
+        });
+
+        // === Логика теста ===
+        var sprites = [];
+        var appTicker;
+
+        function startTest(texture) {
+            var container = new PIXI.Container();
+            app.stage.addChild(container);
+
+            // === FPS счётчик ===
+            var fpsEl = document.getElementById('fps');
+            var lastTime = performance.now();
+            var frames = 0;
+
+            app.ticker.add(function () {
+                frames++;
+                var now = performance.now();
+                if (now - lastTime >= 500) {
+                    var fps = Math.round(frames * 1000 / (now - lastTime));
+                    fpsEl.textContent = 'FPS: ' + fps + ' | Объектов: ' + sprites.length;
+                    fpsEl.style.color = fps >= 55 ? '#64C8BD' : fps >= 40 ? '#FFD280' : '#FF4040';
+                    frames = 0;
+                    lastTime = now;
+                }
+
+                // Двигаем спрайты
+                for (var i = 0; i < sprites.length; i++) {
+                    var s = sprites[i];
+                    s.x += s.vx;
+                    s.y += s.vy;
+                    if (s.x < 0 || s.x > app.screen.width)  s.vx *= -1;
+                    if (s.y < 0 || s.y > app.screen.height) s.vy *= -1;
+                }
+            });
+
+            // === Обработка кнопок ===
+            function setCount(count) {
+                // Удаляем старые
+                for (var i = 0; i < sprites.length; i++) {
+                    container.removeChild(sprites[i]);
+                    sprites[i].destroy();
+                }
+                sprites = [];
+
+                // Добавляем новые
+                for (var i = 0; i < count; i++) {
+                    var s = new PIXI.Sprite(texture);
+                    s.anchor.set(0.5);
+                    s.width = 48;
+                    s.height = 48;
+                    s.x = Math.random() * app.screen.width;
+                    s.y = Math.random() * app.screen.height;
+                    s.vx = (Math.random() - 0.5) * 4;
+                    s.vy = (Math.random() - 0.5) * 4;
+                    s.rotation = Math.random() * Math.PI * 2;
+                    container.addChild(s);
+                    sprites.push(s);
+                }
+            }
+
+            document.querySelectorAll('#controls button').forEach(function (btn) {
+                btn.addEventListener('click', function () {
+                    document.querySelectorAll('#controls button').forEach(function (b) {
+                        b.classList.remove('active');
+                    });
+                    this.classList.add('active');
+                    setCount(parseInt(this.dataset.count, 10));
+                });
+            });
+
+            // Стартуем с 500 объектов
+            setCount(500);
+
+            // === Resize ===
+            window.addEventListener('resize', function () {
+                app.renderer.resize(window.innerWidth, window.innerHeight);
+            });
+        }
+
+    })();
+    </script>
+</body>
+</html>
