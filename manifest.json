@@ -1,27 +1,30 @@
 {
-  "slug": "smsik-game",
+  "slug": "spark-game",
   "type": "module",
-  "name": "🚀 Смсик: Космическая доставка",
-  "version": "0.1.0",
+  "name": "🌌 Спарк: Космическая Доставка",
+  "version": "0.6.0",
   "author": "FestaCMS",
   "license": "MIT",
-  "description": "Игра для страницы 404: помоги Смсику доставить радость сквозь галактику.",
+  "description": "Игровой модуль для страницы 404: помоги Смсику Спарку доставить радость сквозь галактику.",
 
   "min_cms_version": "1.0.0",
   "min_php_version": "7.4",
 
-  "entry_point": "404.php",
+  "entry_point": "game/index.php",
   "admin_url": "admin.php",
 
   "tables": [
-    "smsik_scores"
+    "spark_scores"
   ],
 
   "settings": {
     "enabled": true,
     "allow_mobile": true,
-    "allow_sound": false,
-    "leaderboard_size": 10
+    "allow_sound": true,
+    "allow_vibration": true,
+    "leaderboard_size": 10,
+    "show_on_all_404": true,
+    "skip_for_bots": true
   },
 
   "update": {
