@@ -305,10 +305,16 @@ renderBreadcrumbs($breadcrumbItems);
     </div>
 </div>
 
-<!-- Спрайты — загружаем ПЕРВЫМИ, без defer -->
+<!-- Pixi.js (WebGL) -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@7.4.2/dist/pixi.min.js"></script>
+
+<!-- Спрайты (SVG → Image) -->
 <script src="/js/game-sprites.js?v=1.0"></script>
 
-<!-- Логика игры — с defer, чтобы DOM был готов -->
+<!-- Старая Canvas-версия (оставляем — она даёт HUD и overlays) -->
 <script src="/js/404-game.js?v=1.5" defer></script>
+
+<!-- НОВАЯ Pixi-версия -->
+<script src="/js/404-game-pixi.js?v=0.2" defer></script>
 
 <?php include __DIR__ . '/footer.php'; ?>
