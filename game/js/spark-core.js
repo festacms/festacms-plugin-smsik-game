@@ -2,13 +2,11 @@
  * FestaCMS — Спарк: Космическая Доставка
  * Игровая логика (PixiGame)
  *
- * v0.6.1:
+ * v0.6.2:
+ *   - Явные zIndex для правильных слоёв
+ *   - sortableChildren = true
+ *   - Игрок, HUD и пули не перекрываются фоном после resize
  *   - Подключён модуль космического фона (SmsikGame.Background)
- *   - Фон обновляется в _tick
- *   - Пересоздаётся при resize
- *
- * Файл разбит на 3 части для удобства копирования.
- * Это ЧАСТЬ 1/3: конструктор, инициализация, фон, игрок.
  */
 
 (function () {
@@ -16,7 +14,6 @@
 
     var SmsikGame = window.SmsikGame = window.SmsikGame || {};
 
-    // Сокращения
     var rand    = SmsikGame.utils.rand;
     var randInt = SmsikGame.utils.randInt;
     var clamp   = SmsikGame.utils.clamp;
@@ -24,6 +21,25 @@
 
     var CFG       = SmsikGame.CFG;
     var IS_MOBILE = SmsikGame.IS_MOBILE;
+
+    // ============================================================
+    // === Z-ИНДЕКСЫ СЛОЁВ ========================================
+    // ============================================================
+    // Чем больше число — тем выше слой (поверх всего)
+    // ============================================================
+
+    var Z = {
+        BG_SPRITE:     0,     // градиентный фон
+        STARS:         1,     // звёзды
+        BACKGROUND:    2,     // туманности, планеты, кометы
+        ITEMS:         5,     // враги, бонусы, сердечки
+        BULLETS:       6,     // наши пули + вражеские
+        PARTICLES:     8,     // взрывы, искры
+        PLAYER:       10,     // Смсик + свечение + пушка
+        TEXTS:        15,     // всплывающие +X очков
+        HUD:          20,     // HUD (очки, жизни, FPS)
+        FLASH:       999      // финальная вспышка
+    };
 
     // ============================================================
     // === КОНВЕРТАЦИЯ СПРАЙТОВ SVG → PIXI.TEXTURE ================
@@ -137,6 +153,9 @@
         this.W = this.app.screen.width;
         this.H = this.app.screen.height;
 
+        // === ВКЛЮЧАЕМ СОРТИРОВКУ ПО zIndex ===
+        this.app.stage.sortableChildren = true;
+
         // === Скрываем DOM старой версии ===
         var hideSelectors = [
             '.starfall-hud',
@@ -155,11 +174,11 @@
         this.textures = convertSpritesToTextures();
         console.log('[PixiGame] Загружено текстур:', Object.keys(this.textures).length);
 
-        // === Создаём всё ===
+        // === Создаём всё (в порядке zIndex) ===
         this._createBackground();
         this._createParticleLayer();
 
-        // === Космический фон (туманности, планеты, кометы) ===
+        // Космический фон (туманности, планеты, кометы)
         if (SmsikGame.Background) {
             SmsikGame.Background.init(this.app, this.W, this.H);
         }
@@ -176,11 +195,11 @@
         this.running = true;
         this.app.ticker.add(this._boundTick);
 
-        console.log('[PixiGame] v0.6.1 запущена');
+        console.log('[PixiGame] v0.6.2 запущена (zIndex-слои)');
     };
 
     // ============================================================
-    // === ФОН ====================================================
+    // === ФОН (градиент + звёзды) ================================
     // ============================================================
 
     PixiGame.prototype._createBackground = function () {
@@ -200,8 +219,10 @@
         this.bgSprite = new PIXI.Sprite(tex);
         this.bgSprite.width = this.W;
         this.bgSprite.height = this.H;
+        this.bgSprite.zIndex = Z.BG_SPRITE;   // ← слой 0
         this.app.stage.addChild(this.bgSprite);
 
+        // Звёзды
         this.stars = [];
         var starCount = Math.min(Math.floor(this.W * this.H / 30000), 300);
         for (var i = 0; i < starCount; i++) {
@@ -212,6 +233,7 @@
             star.x = Math.random() * this.W;
             star.y = Math.random() * this.H;
             star._speed = rand(0.1, 0.5);
+            star.zIndex = Z.STARS;   // ← слой 1
             this.app.stage.addChild(star);
             this.stars.push(star);
         }
@@ -219,6 +241,7 @@
 
     PixiGame.prototype._createParticleLayer = function () {
         this.particleLayer = new PIXI.Container();
+        this.particleLayer.zIndex = Z.PARTICLES;   // ← слой 8
         this.app.stage.addChild(this.particleLayer);
     };
 
@@ -228,7 +251,7 @@
         this.flashOverlay.drawRect(0, 0, this.W, this.H);
         this.flashOverlay.endFill();
         this.flashOverlay.alpha = 0;
-        this.flashOverlay.zIndex = 999;
+        this.flashOverlay.zIndex = Z.FLASH;   // ← слой 999
         this.app.stage.addChild(this.flashOverlay);
     };
 
@@ -283,6 +306,7 @@
         this.playerContainer = new PIXI.Container();
         this.playerContainer.x = this.W / 2;
         this.playerContainer.y = this.H - 70;
+        this.playerContainer.zIndex = Z.PLAYER;   // ← слой 10
         this.app.stage.addChild(this.playerContainer);
 
         // Свечение
@@ -331,6 +355,7 @@
         this.hud.score = new PIXI.Text('Очки: 0', hudStyle);
         this.hud.score.x = this.W - 200;
         this.hud.score.y = 15;
+        this.hud.score.zIndex = Z.HUD;
         this.app.stage.addChild(this.hud.score);
 
         // Сердечки
@@ -338,6 +363,7 @@
         this.hud.heartsContainer = new PIXI.Container();
         this.hud.heartsContainer.x = 15;
         this.hud.heartsContainer.y = 15;
+        this.hud.heartsContainer.zIndex = Z.HUD;
         this.app.stage.addChild(this.hud.heartsContainer);
 
         var heartTex = this.textures.heart;
@@ -357,6 +383,7 @@
         this.hud.level = new PIXI.Text('Ур. 1', hudStyle);
         this.hud.level.x = 15;
         this.hud.level.y = 50;
+        this.hud.level.zIndex = Z.HUD;
         this.app.stage.addChild(this.hud.level);
 
         // FPS
@@ -368,6 +395,7 @@
         });
         this.hud.fps.x = this.W - 100;
         this.hud.fps.y = 50;
+        this.hud.fps.zIndex = Z.HUD;
         this.app.stage.addChild(this.hud.fps);
 
         // Оружие + прогресс-бар
@@ -375,6 +403,7 @@
         this.hud.weaponContainer.x = this.W / 2 - 80;
         this.hud.weaponContainer.y = 15;
         this.hud.weaponContainer.visible = false;
+        this.hud.weaponContainer.zIndex = Z.HUD;
         this.app.stage.addChild(this.hud.weaponContainer);
 
         var gunHudTex = this.textures.gun;
@@ -500,8 +529,20 @@
         }
     };
 
+    // ============================================================
+    // === RESIZE =================================================
+    // ============================================================
+    // Фон НЕ пересоздаём — просто сбрасываем позиции элементов HUD.
+    // zIndex гарантирует, что слои останутся правильными.
+    // Пересоздание нужно только если размер изменился ОЧЕНЬ сильно.
+    // ============================================================
+
     PixiGame.prototype._onResize = function () {
         if (!this.app) return;
+
+        var oldW = this.W;
+        var oldH = this.H;
+
         this.app.renderer.resize(window.innerWidth, window.innerHeight);
         this.W = this.app.screen.width;
         this.H = this.app.screen.height;
@@ -511,22 +552,11 @@
             this.bgSprite.height = this.H;
         }
 
-        // Пересоздать космический фон под новый размер
-        if (SmsikGame.Background && SmsikGame.Background.layer) {
-            if (SmsikGame.Background.layer.parent) {
-                SmsikGame.Background.layer.parent.removeChild(SmsikGame.Background.layer);
-            }
-            SmsikGame.Background.layer.destroy({ children: true });
-            SmsikGame.Background.nebulas = [];
-            SmsikGame.Background.planets = [];
-            SmsikGame.Background.comets = [];
-            SmsikGame.Background.init(this.app, this.W, this.H);
-        }
-
         if (this.playerContainer) {
             this.playerContainer.y = this.H - 70;
             this.playerContainer.x = clamp(this.playerContainer.x, 40, this.W - 40);
         }
+
         if (this.flashOverlay) {
             this.flashOverlay.clear();
             this.flashOverlay.beginFill(0xffffff, 1);
@@ -534,9 +564,30 @@
             this.flashOverlay.endFill();
         }
 
+        // HUD
         if (this.hud.score)            this.hud.score.x = this.W - 200;
         if (this.hud.fps)              this.hud.fps.x = this.W - 100;
         if (this.hud.weaponContainer)  this.hud.weaponContainer.x = this.W / 2 - 80;
+
+        // Космический фон — пересоздаём ТОЛЬКО если размер изменился сильно
+        var dw = Math.abs(this.W - (this._lastBgW || 0));
+        var dh = Math.abs(this.H - (this._lastBgH || 0));
+
+        if (SmsikGame.Background && (dw > 200 || dh > 200)) {
+            this._lastBgW = this.W;
+            this._lastBgH = this.H;
+
+            // Удаляем старый слой фона
+            if (SmsikGame.Background.layer && SmsikGame.Background.layer.parent) {
+                SmsikGame.Background.layer.parent.removeChild(SmsikGame.Background.layer);
+                SmsikGame.Background.layer.destroy({ children: true });
+            }
+
+            SmsikGame.Background.nebulas = [];
+            SmsikGame.Background.planets = [];
+            SmsikGame.Background.comets = [];
+            SmsikGame.Background.init(this.app, this.W, this.H);
+        }
     };
 
     // ============================================================
@@ -673,7 +724,7 @@
         bullet.height = CFG.BULLET_SIZE * 6;
         bullet.x = this.playerContainer.x;
         bullet.y = this.playerContainer.y - CFG.PLAYER_SIZE * 0.3;
-
+        bullet.zIndex = Z.BULLETS;   // ← слой 6
         this.app.stage.addChild(bullet);
 
         this.bullets.push({
@@ -799,7 +850,7 @@
         sprite.height = size * 2.2;
         sprite.x = rand(40, this.W - 40);
         sprite.y = -50;
-
+        sprite.zIndex = Z.ITEMS;   // ← слой 5
         this.app.stage.addChild(sprite);
 
         this.items.push({
@@ -827,7 +878,7 @@
         sprite.height = 44 * 2.2;
         sprite.x = rand(60, this.W - 60);
         sprite.y = -50;
-
+        sprite.zIndex = Z.ITEMS;
         this.app.stage.addChild(sprite);
 
         this.items.push({
@@ -854,7 +905,7 @@
         sprite.height = CFG.HEART_SIZE * 2.2;
         sprite.x = rand(60, this.W - 60);
         sprite.y = -50;
-
+        sprite.zIndex = Z.ITEMS;
         this.app.stage.addChild(sprite);
 
         this.items.push({
@@ -974,9 +1025,9 @@
         bullet.beginFill(0xfff0f0, 1);
         bullet.drawCircle(0, 0, CFG.ENEMY_BULLET_SIZE * 0.4);
         bullet.endFill();
-
         bullet.x = it.sprite.x;
         bullet.y = it.sprite.y + it.radius * 0.7;
+        bullet.zIndex = Z.BULLETS;
 
         var glow = new PIXI.Graphics();
         glow.beginFill(0xff4040, 0.3);
@@ -984,6 +1035,7 @@
         glow.endFill();
         glow.x = bullet.x;
         glow.y = bullet.y;
+        glow.zIndex = Z.BULLETS - 1;
 
         this.app.stage.addChild(glow);
         this.app.stage.addChild(bullet);
@@ -1020,7 +1072,6 @@
         this.lives -= CFG.ENEMY_BULLET_DAMAGE;
         if (this.lives < 0) this.lives = 0;
         this._updateLives();
-
         this.playerHitTimer = 15;
 
         this._spawnParticles(eb.sprite.x, eb.sprite.y, 0xff4040, 12, {
@@ -1030,9 +1081,7 @@
         });
 
         this._flash(0xff4040, 150);
-
         if (SmsikGame.Audio) SmsikGame.Audio.playDamage();
-
         if (this.lives <= 0) this._gameOver();
     };
 
@@ -1123,6 +1172,7 @@
         t._life = 1.2;
         t._maxLife = 1.2;
         t._vy = -1.5;
+        t.zIndex = Z.TEXTS;   // ← слой 15
         this.app.stage.addChild(t);
         this.texts.push(t);
     };
@@ -1213,7 +1263,6 @@
         this.lives -= it.damage;
         if (this.lives < 0) this.lives = 0;
         this._updateLives();
-
         this.playerHitTimer = 15;
 
         this._spawnParticles(it.sprite.x, it.sprite.y, 0xff4040, 18, {
@@ -1226,7 +1275,6 @@
         else this._flash(0xff8080, 180);
 
         if (SmsikGame.Audio) SmsikGame.Audio.playDamage();
-
         if (this.lives <= 0) this._gameOver();
     };
 
@@ -1324,21 +1372,18 @@
     // ============================================================
 
     PixiGame.prototype.restart = function () {
-        // Удаляем предметы
         for (var i = 0; i < this.items.length; i++) {
             this.app.stage.removeChild(this.items[i].sprite);
             this.items[i].sprite.destroy();
         }
         this.items = [];
 
-        // Удаляем наши пули
         for (var j = 0; j < this.bullets.length; j++) {
             this.app.stage.removeChild(this.bullets[j].sprite);
             this.bullets[j].sprite.destroy();
         }
         this.bullets = [];
 
-        // Удаляем вражеские пули
         for (var e = 0; e < this.enemyBullets.length; e++) {
             if (this.enemyBullets[e].sprite.parent) {
                 this.enemyBullets[e].sprite.parent.removeChild(this.enemyBullets[e].sprite);
@@ -1351,7 +1396,6 @@
         }
         this.enemyBullets = [];
 
-        // Удаляем частицы
         for (var p = 0; p < this.particles.length; p++) {
             if (this.particles[p].parent) {
                 this.particles[p].parent.removeChild(this.particles[p]);
@@ -1360,7 +1404,6 @@
         }
         this.particles = [];
 
-        // Удаляем тексты
         for (var t = 0; t < this.texts.length; t++) {
             if (this.texts[t].parent) {
                 this.texts[t].parent.removeChild(this.texts[t]);
@@ -1369,7 +1412,6 @@
         }
         this.texts = [];
 
-        // Сброс состояния
         this.score = 0;
         this.level = 1;
         this.lives = CFG.MAX_LIVES;
@@ -1407,9 +1449,8 @@
         this.running = true;
     };
 
-    // Экспорт класса в SmsikGame
     SmsikGame.PixiGame = PixiGame;
 
-    console.log('[Core] Часть 3/3 загружена. spark-core.js собран полностью (v0.6.1)');
+    console.log('[Core] Часть 3/3 загружена. spark-core.js собран полностью (v0.6.2)');
 
 })();

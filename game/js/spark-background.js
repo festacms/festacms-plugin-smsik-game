@@ -1,12 +1,11 @@
 /**
  * FestaCMS — Спарк: Космическая Доставка
- * Космический фон: реалистичные туманности, планеты, кометы
+ * Космический фон: туманности (5 типов), планеты, кометы
  *
- * v0.7.0:
- *   - Многослойные туманности (40+ пятен с шумом и звёздочками)
- *   - Планеты с континентами, облаками, атмосферой и тенями
- *   - Кометы с длинным хвостом
- *   - Разные палитры для каждой туманности
+ * v0.8.1:
+ *   - Радиальная маска для туманностей (нет квадратных краёв)
+ *   - Планеты уменьшены (радиус 30–70, холст ×4)
+ *   - Туманности меньше и прозрачнее
  */
 
 (function () {
@@ -20,139 +19,33 @@
 
     var IS_MOBILE = SmsikGame.IS_MOBILE;
 
-    // ============================================================
-    // === КОНФИГ =================================================
-    // ============================================================
-
     var BG_CFG = {
         NEBULA_COUNT: IS_MOBILE ? 3 : 5,
         PLANET_COUNT: IS_MOBILE ? 2 : 4,
         COMET_INTERVAL_MIN: 12 * 60,
         COMET_INTERVAL_MAX: 25 * 60,
-        NEBULA_TEX_SIZE: IS_MOBILE ? 256 : 512,
+        NEBULA_TEX_SIZE: IS_MOBILE ? 512 : 768,
+        PLANET_TEX_MUL: 4,
     };
 
-    // Палитры для туманностей (как в реальном космосе)
     var NEBULA_PALETTES = [
-        // Водородно-красная (как Туманность Ориона)
-        {
-            name: 'hydrogen',
-            colors: [
-                [255, 100, 100],
-                [255, 150, 200],
-                [200, 60, 120],
-                [180, 40, 100]
-            ],
-            starColor: 0xffd0e0
-        },
-        // Кислородно-бирюзовая (как NGC 7000)
-        {
-            name: 'oxygen',
-            colors: [
-                [100, 220, 220],
-                [64, 200, 189],
-                [40, 140, 200],
-                [120, 200, 255]
-            ],
-            starColor: 0xb8ebe4
-        },
-        // Фиолетово-розовая (как Туманность Бабочка)
-        {
-            name: 'violet',
-            colors: [
-                [180, 100, 255],
-                [140, 60, 200],
-                [255, 120, 200],
-                [100, 40, 180]
-            ],
-            starColor: 0xd0b8ff
-        },
-        // Золотая (пыль)
-        {
-            name: 'gold',
-            colors: [
-                [255, 210, 128],
-                [240, 160, 80],
-                [255, 180, 100],
-                [200, 130, 60]
-            ],
-            starColor: 0xffe0a0
-        },
-        // Глубокий синий (как Туманность Вуаль)
-        {
-            name: 'deep_blue',
-            colors: [
-                [80, 140, 255],
-                [60, 100, 200],
-                [140, 200, 255],
-                [40, 80, 180]
-            ],
-            starColor: 0xa0c8ff
-        }
+        { name: 'hydrogen', colors: [[255,80,100],[255,140,180],[200,50,110],[255,180,140]], core: [255,220,220] },
+        { name: 'oxygen',   colors: [[80,220,220],[64,200,189],[40,140,200],[140,220,255]], core: [220,255,255] },
+        { name: 'violet',   colors: [[180,90,255],[140,50,200],[255,110,190],[100,40,180]], core: [240,220,255] },
+        { name: 'gold',     colors: [[255,200,110],[240,150,70],[255,170,90],[200,120,50]], core: [255,240,200] },
+        { name: 'deep_blue',colors: [[70,130,255],[50,90,200],[130,190,255],[30,70,170]],   core: [200,220,255] }
     ];
 
-    // Палитры планет
+    var NEBULA_SHAPES = ['blob', 'spiral', 'filament', 'diffuse', 'wisp'];
+
     var PLANET_PALETTES = [
-        // Землеподобная
-        {
-            type: 'terran',
-            base: ['#1a3a5c', '#2d6ba8', '#4a9fd8'],
-            land: ['#2d5a2d', '#4a8a3a', '#7db87a'],
-            cloud: '#ffffff',
-            atmosphere: '#88c8ff',
-            hasRing: false
-        },
-        // Газовый гигант (как Юпитер)
-        {
-            type: 'gas',
-            base: ['#5c3a1a', '#a8784a', '#d8a870', '#e8c898'],
-            land: null,
-            cloud: 'rgba(255,240,220,0.4)',
-            atmosphere: '#ffd8a0',
-            hasRing: true,
-            ringColor: 'rgba(220, 180, 140, 0.7)'
-        },
-        // Ледяная
-        {
-            type: 'ice',
-            base: ['#0e5a5e', '#218278', '#64C8BD', '#a5e3dd'],
-            land: null,
-            cloud: 'rgba(255,255,255,0.5)',
-            atmosphere: '#a5e3dd',
-            hasRing: false
-        },
-        // Пустынная (как Марс)
-        {
-            type: 'desert',
-            base: ['#5c2010', '#8B3A1A', '#c66a3a', '#d89060'],
-            land: ['#7a2818', '#a04828'],
-            cloud: null,
-            atmosphere: '#ff8050',
-            hasRing: false
-        },
-        // Лавовая
-        {
-            type: 'lava',
-            base: ['#4a0f14', '#8B1A1A', '#CD5C5C', '#F08080'],
-            land: ['#ff6020', '#ff8040'],
-            cloud: null,
-            atmosphere: '#ff6030',
-            hasRing: false
-        },
-        // Пурпурная (как Венера)
-        {
-            type: 'purple',
-            base: ['#3a1a4a', '#6b3a8a', '#a06bc0', '#d0a0e8'],
-            land: ['#5a2a7a', '#8040a0'],
-            cloud: 'rgba(220,200,240,0.4)',
-            atmosphere: '#c090e0',
-            hasRing: false
-        }
+        { type: 'terran',  base: ['#0d2a4a', '#1a5080', '#3a8ac0', '#80c0e8'], land: ['#2a5a2a', '#3a7a3a', '#5a9a5a'], cloud: 'rgba(255,255,255,0.5)', atmosphere: 'rgba(120,190,255,0.6)', hasRing: false },
+        { type: 'gas',     base: ['#5c3a1a', '#a8784a', '#d8a870', '#f0d0a0'], land: null, cloud: 'rgba(255,240,220,0.3)', atmosphere: 'rgba(255,200,140,0.5)', hasRing: true, ringColor: 'rgba(220,180,140,0.75)' },
+        { type: 'ice',     base: ['#0a4a52', '#1a7288', '#40a8c0', '#a0dce8'], land: ['#d8f0f8', '#a8e0f0'], cloud: 'rgba(255,255,255,0.4)', atmosphere: 'rgba(140,230,240,0.6)', hasRing: false },
+        { type: 'desert',  base: ['#4a1a0a', '#8a3a1a', '#c66a3a', '#e0a070'], land: ['#6a2010', '#9a4830'], cloud: null, atmosphere: 'rgba(255,140,80,0.5)', hasRing: false },
+        { type: 'lava',    base: ['#3a0808', '#7a1010', '#c04040', '#f08080'], land: ['#ff5020', '#ff8040', '#ffb060'], cloud: null, atmosphere: 'rgba(255,90,40,0.6)', hasRing: false },
+        { type: 'purple',  base: ['#2a0a3a', '#5a2a7a', '#9050b0', '#c890e0'], land: ['#4a1a6a', '#7038a0'], cloud: 'rgba(230,210,250,0.4)', atmosphere: 'rgba(190,130,230,0.55)', hasRing: false }
     ];
-
-    // ============================================================
-    // === МОДУЛЬ =================================================
-    // ============================================================
 
     SmsikGame.Background = {
 
@@ -166,10 +59,9 @@
         comets: [],
 
         _cometTimer: 0,
-
-        // ============================================================
-        // ИНИЦИАЛИЗАЦИЯ
-        // ============================================================
+        _usedNebulaPalettes: [],
+        _usedNebulaShapes: [],
+        _usedPlanetTypes: [],
 
         init: function (app, W, H) {
             this.app = app;
@@ -177,7 +69,12 @@
             this.H = H;
 
             this.layer = new PIXI.Container();
+            this.layer.zIndex = 1;
             app.stage.addChild(this.layer);
+
+            this._usedNebulaPalettes = [];
+            this._usedNebulaShapes = [];
+            this._usedPlanetTypes = [];
 
             this._createNebulas();
             this._createPlanets();
@@ -186,31 +83,22 @@
             console.log('[Background] Фон создан:', this.nebulas.length, 'туманностей,', this.planets.length, 'планет');
         },
 
-        // ============================================================
-        // ТУМАННОСТИ — многослойные, реалистичные
-        // ============================================================
-
         _createNebulas: function () {
             this.nebulas = [];
-            var usedPalettes = [];
 
             for (var i = 0; i < BG_CFG.NEBULA_COUNT; i++) {
-                // Берём палитру, которой ещё не было (для разнообразия)
-                var available = NEBULA_PALETTES.filter(function (p) {
-                    return usedPalettes.indexOf(p.name) === -1;
-                });
-                if (available.length === 0) available = NEBULA_PALETTES;
+                var pal = this._nextNebulaPalette();
+                var shape = this._nextNebulaShape();
 
-                var pal = pick(available);
-                usedPalettes.push(pal.name);
-
-                var size = rand(this.W * 0.35, this.W * 0.65);
-                var tex = this._createNebulaTexture(size, pal);
+                var size = rand(this.W * 0.35, this.W * 0.55);
+                var tex = this._createNebulaTexture(shape, pal);
                 var sprite = new PIXI.Sprite(tex);
                 sprite.anchor.set(0.5);
-                sprite.alpha = rand(0.55, 0.85);  // ← ЯРКОСТЬ! Было 0.1 — стало 0.55–0.85
-                sprite.x = rand(-this.W * 0.15, this.W * 1.15);
-                sprite.y = rand(-this.H * 0.15, this.H * 1.15);
+                sprite.alpha = rand(0.35, 0.55);
+                sprite.x = rand(-this.W * 0.1, this.W * 1.1);
+                sprite.y = rand(-this.H * 0.1, this.H * 1.1);
+                sprite.width = size;
+                sprite.height = size;
 
                 this.layer.addChild(sprite);
 
@@ -220,135 +108,239 @@
                     vy: rand(-0.04, 0.04),
                     size: size
                 });
+
+                console.log('[Background] Туманность:', shape, '/', pal.name);
             }
         },
 
-        _createNebulaTexture: function (size, pal) {
-            var canvas = document.createElement('canvas');
-            canvas.width = BG_CFG.NEBULA_TEX_SIZE;
-            canvas.height = BG_CFG.NEBULA_TEX_SIZE;
-            var ctx = canvas.getContext('2d');
-            var S = BG_CFG.NEBULA_TEX_SIZE;
+        _nextNebulaPalette: function () {
+            var available = NEBULA_PALETTES.filter(function (p) {
+                return this._usedNebulaPalettes.indexOf(p.name) === -1;
+            }.bind(this));
+            if (available.length === 0) { this._usedNebulaPalettes = []; available = NEBULA_PALETTES; }
+            var pal = pick(available);
+            this._usedNebulaPalettes.push(pal.name);
+            return pal;
+        },
 
-            // Работаем в режиме "lighter" — наложение с яркостью
+        _nextNebulaShape: function () {
+            var available = NEBULA_SHAPES.filter(function (s) {
+                return this._usedNebulaShapes.indexOf(s) === -1;
+            }.bind(this));
+            if (available.length === 0) { this._usedNebulaShapes = []; available = NEBULA_SHAPES; }
+            var shape = pick(available);
+            this._usedNebulaShapes.push(shape);
+            return shape;
+        },
+
+        _createNebulaTexture: function (shape, pal) {
+            var S = BG_CFG.NEBULA_TEX_SIZE;
+            var canvas = document.createElement('canvas');
+            canvas.width = S;
+            canvas.height = S;
+            var ctx = canvas.getContext('2d');
+
             ctx.globalCompositeOperation = 'lighter';
 
-            // === Слой 1: Большие размытые пятна (основа) ===
-            var baseBlobs = 25;
-            for (var b = 0; b < baseBlobs; b++) {
-                var col = pick(pal.colors);
-                var cx = rand(S * 0.2, S * 0.8);
-                var cy = rand(S * 0.2, S * 0.8);
-                var r = rand(S * 0.15, S * 0.35);
-                var a = rand(0.05, 0.12);
-
-                var grad = ctx.createRadialGradient(cx, cy, 0, cx, cy, r);
-                grad.addColorStop(0, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + a + ')');
-                grad.addColorStop(0.5, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + (a * 0.5) + ')');
-                grad.addColorStop(1, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',0)');
-
-                ctx.fillStyle = grad;
-                ctx.fillRect(0, 0, S, S);
+            switch (shape) {
+                case 'blob':     this._drawNebulaBlob(ctx, S, pal); break;
+                case 'spiral':   this._drawNebulaSpiral(ctx, S, pal); break;
+                case 'filament': this._drawNebulaFilament(ctx, S, pal); break;
+                case 'diffuse':  this._drawNebulaDiffuse(ctx, S, pal); break;
+                case 'wisp':     this._drawNebulaWisp(ctx, S, pal); break;
+                default:         this._drawNebulaBlob(ctx, S, pal);
             }
 
-            // === Слой 2: Мелкие яркие сгустки (структура) ===
-            var brightBlobs = 40;
-            for (var s = 0; s < brightBlobs; s++) {
-                var col2 = pick(pal.colors);
-                var sx = rand(S * 0.25, S * 0.75);
-                var sy = rand(S * 0.25, S * 0.75);
-                var sr = rand(S * 0.03, S * 0.12);
-                var sa = rand(0.15, 0.35);
+            this._drawNebulaStars(ctx, S, pal);
 
-                var grad2 = ctx.createRadialGradient(sx, sy, 0, sx, sy, sr);
-                grad2.addColorStop(0, 'rgba(' + col2[0] + ',' + col2[1] + ',' + col2[2] + ',' + sa + ')');
-                grad2.addColorStop(1, 'rgba(' + col2[0] + ',' + col2[1] + ',' + col2[2] + ',0)');
+            // === РАДИАЛЬНАЯ МАСКА (главный фикс!) ===
+            // Затухание к краям — убирает квадратные границы
+            ctx.globalCompositeOperation = 'destination-in';
+            var mask = ctx.createRadialGradient(S/2, S/2, S * 0.1, S/2, S/2, S * 0.5);
+            mask.addColorStop(0, 'rgba(0,0,0,1)');
+            mask.addColorStop(0.6, 'rgba(0,0,0,0.85)');
+            mask.addColorStop(0.85, 'rgba(0,0,0,0.3)');
+            mask.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = mask;
+            ctx.fillRect(0, 0, S, S);
 
-                ctx.fillStyle = grad2;
-                ctx.beginPath();
-                ctx.arc(sx, sy, sr, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            // === Слой 3: Волокна (длинные тонкие структуры) ===
-            var filaments = 15;
-            ctx.lineCap = 'round';
-            for (var f = 0; f < filaments; f++) {
-                var col3 = pick(pal.colors);
-                var x1 = rand(S * 0.2, S * 0.8);
-                var y1 = rand(S * 0.2, S * 0.8);
-                var angle = Math.random() * Math.PI * 2;
-                var len = rand(S * 0.1, S * 0.3);
-
-                var grad3 = ctx.createLinearGradient(x1, y1, x1 + Math.cos(angle) * len, y1 + Math.sin(angle) * len);
-                grad3.addColorStop(0, 'rgba(' + col3[0] + ',' + col3[1] + ',' + col3[2] + ',0)');
-                grad3.addColorStop(0.5, 'rgba(' + col3[0] + ',' + col3[1] + ',' + col3[2] + ',0.2)');
-                grad3.addColorStop(1, 'rgba(' + col3[0] + ',' + col3[1] + ',' + col3[2] + ',0)');
-
-                ctx.strokeStyle = grad3;
-                ctx.lineWidth = rand(2, 8);
-                ctx.beginPath();
-                ctx.moveTo(x1, y1);
-                ctx.lineTo(x1 + Math.cos(angle) * len, y1 + Math.sin(angle) * len);
-                ctx.stroke();
-            }
-
-            // === Слой 4: Звёздочки внутри туманности ===
-            var stars = 30;
-            for (var st = 0; st < stars; st++) {
-                var sx2 = rand(S * 0.2, S * 0.8);
-                var sy2 = rand(S * 0.2, S * 0.8);
-                var sr2 = rand(1, 2.5);
-                var sa2 = rand(0.4, 0.9);
-
-                // Светящаяся обводка
-                var grad4 = ctx.createRadialGradient(sx2, sy2, 0, sx2, sy2, sr2 * 6);
-                grad4.addColorStop(0, 'rgba(255,255,255,' + sa2 + ')');
-                grad4.addColorStop(0.3, 'rgba(255,255,255,' + (sa2 * 0.3) + ')');
-                grad4.addColorStop(1, 'rgba(255,255,255,0)');
-
-                ctx.fillStyle = grad4;
-                ctx.beginPath();
-                ctx.arc(sx2, sy2, sr2 * 6, 0, Math.PI * 2);
-                ctx.fill();
-
-                // Яркая точка
-                ctx.fillStyle = 'rgba(255,255,255,' + sa2 + ')';
-                ctx.beginPath();
-                ctx.arc(sx2, sy2, sr2, 0, Math.PI * 2);
-                ctx.fill();
-            }
-
-            // Сбросим режим
             ctx.globalCompositeOperation = 'source-over';
-
             return PIXI.Texture.from(canvas);
         },
 
-        // ============================================================
-        // ПЛАНЕТЫ — с континентами, облаками, атмосферой
-        // ============================================================
+        _drawNebulaBlob: function (ctx, S, pal) {
+            var cx = S / 2, cy = S / 2;
+            var coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 0.3);
+            coreGrad.addColorStop(0, 'rgba(' + pal.core[0] + ',' + pal.core[1] + ',' + pal.core[2] + ',0.6)');
+            coreGrad.addColorStop(0.4, 'rgba(' + pal.colors[1][0] + ',' + pal.colors[1][1] + ',' + pal.colors[1][2] + ',0.4)');
+            coreGrad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = coreGrad;
+            ctx.fillRect(0, 0, S, S);
+
+            for (var i = 0; i < 40; i++) {
+                var col = pick(pal.colors);
+                var x = cx + rand(-S * 0.28, S * 0.28);
+                var y = cy + rand(-S * 0.28, S * 0.28);
+                var r = rand(S * 0.04, S * 0.15);
+                var a = rand(0.08, 0.22);
+                var grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+                grad.addColorStop(0, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + a + ')');
+                grad.addColorStop(1, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        },
+
+        _drawNebulaSpiral: function (ctx, S, pal) {
+            var cx = S / 2, cy = S / 2;
+            var arms = 2 + Math.floor(Math.random() * 2);
+            var turns = rand(1.5, 2.5);
+
+            for (var arm = 0; arm < arms; arm++) {
+                var startAngle = (arm / arms) * Math.PI * 2;
+                var points = 150;
+                for (var i = 0; i < points; i++) {
+                    var t = i / points;
+                    var angle = startAngle + t * turns * Math.PI * 2;
+                    var radius = t * S * 0.4;
+                    var x = cx + Math.cos(angle) * radius;
+                    var y = cy + Math.sin(angle) * radius;
+                    var col = pick(pal.colors);
+                    var blobR = S * (0.03 + (1 - t) * 0.05) * rand(0.7, 1.3);
+                    var alpha = rand(0.1, 0.25) * (1 - t * 0.5);
+                    var grad = ctx.createRadialGradient(x, y, 0, x, y, blobR);
+                    grad.addColorStop(0, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + alpha + ')');
+                    grad.addColorStop(1, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(x, y, blobR, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+
+            var coreGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, S * 0.12);
+            coreGrad.addColorStop(0, 'rgba(' + pal.core[0] + ',' + pal.core[1] + ',' + pal.core[2] + ',0.7)');
+            coreGrad.addColorStop(1, 'rgba(0,0,0,0)');
+            ctx.fillStyle = coreGrad;
+            ctx.fillRect(0, 0, S, S);
+        },
+
+        _drawNebulaFilament: function (ctx, S, pal) {
+            var strands = 8;
+            for (var s = 0; s < strands; s++) {
+                var startX = rand(S * 0.2, S * 0.8);
+                var startY = rand(S * 0.2, S * 0.8);
+                var angle = Math.random() * Math.PI * 2;
+                var length = rand(S * 0.25, S * 0.45);
+                var steps = 40;
+                var wobble = rand(0.3, 0.8);
+
+                for (var i = 0; i < steps; i++) {
+                    var t = i / steps;
+                    var wobbleAngle = angle + Math.sin(t * Math.PI * 4) * wobble;
+                    var x = startX + Math.cos(wobbleAngle) * length * t;
+                    var y = startY + Math.sin(wobbleAngle) * length * t;
+                    var col = pick(pal.colors);
+                    var r = rand(S * 0.015, S * 0.04) * (1 - t * 0.6);
+                    var alpha = rand(0.15, 0.3) * (1 - t * 0.5);
+                    var grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+                    grad.addColorStop(0, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + alpha + ')');
+                    grad.addColorStop(1, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',0)');
+                    ctx.fillStyle = grad;
+                    ctx.beginPath();
+                    ctx.arc(x, y, r, 0, Math.PI * 2);
+                    ctx.fill();
+                }
+            }
+        },
+
+        _drawNebulaDiffuse: function (ctx, S, pal) {
+            for (var i = 0; i < 100; i++) {
+                var col = pick(pal.colors);
+                var x = rand(S * 0.15, S * 0.85);
+                var y = rand(S * 0.15, S * 0.85);
+                var d = Math.sqrt(Math.pow(x - S/2, 2) + Math.pow(y - S/2, 2));
+                var centerFade = 1 - (d / (S * 0.5));
+                if (centerFade < 0) centerFade = 0;
+                var r = rand(S * 0.05, S * 0.12);
+                var a = rand(0.03, 0.1) * (0.5 + centerFade * 0.5);
+                var grad = ctx.createRadialGradient(x, y, 0, x, y, r);
+                grad.addColorStop(0, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + a + ')');
+                grad.addColorStop(1, 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        },
+
+        _drawNebulaWisp: function (ctx, S, pal) {
+            var wisps = 6;
+            for (var w = 0; w < wisps; w++) {
+                var baseX = rand(S * 0.25, S * 0.75);
+                var baseY = rand(S * 0.25, S * 0.75);
+                var baseAngle = Math.random() * Math.PI * 2;
+                var points = 60;
+                var length = rand(S * 0.15, S * 0.35);
+                ctx.lineCap = 'round';
+                var col = pick(pal.colors);
+
+                for (var i = 0; i < points; i++) {
+                    var t = i / points;
+                    var wobble = Math.sin(t * Math.PI * 6 + w) * 0.5;
+                    var angle = baseAngle + wobble;
+                    var x = baseX + Math.cos(angle) * length * t;
+                    var y = baseY + Math.sin(angle) * length * t;
+                    var lineWidth = rand(S * 0.004, S * 0.015);
+                    var alpha = rand(0.15, 0.35) * (1 - t * 0.3);
+                    ctx.beginPath();
+                    ctx.strokeStyle = 'rgba(' + col[0] + ',' + col[1] + ',' + col[2] + ',' + alpha + ')';
+                    ctx.lineWidth = lineWidth;
+                    ctx.moveTo(x, y);
+                    ctx.lineTo(x + Math.cos(angle) * 5, y + Math.sin(angle) * 5);
+                    ctx.stroke();
+                }
+            }
+        },
+
+        _drawNebulaStars: function (ctx, S, pal) {
+            for (var i = 0; i < 25; i++) {
+                var x = rand(S * 0.2, S * 0.8);
+                var y = rand(S * 0.2, S * 0.8);
+                var d = Math.sqrt(Math.pow(x - S/2, 2) + Math.pow(y - S/2, 2));
+                var fade = 1 - (d / (S * 0.5));
+                if (fade < 0.2) continue;
+                var r = rand(0.8, 2);
+                var a = rand(0.5, 1) * fade;
+                var grad = ctx.createRadialGradient(x, y, 0, x, y, r * 5);
+                grad.addColorStop(0, 'rgba(' + pal.core[0] + ',' + pal.core[1] + ',' + pal.core[2] + ',' + a + ')');
+                grad.addColorStop(1, 'rgba(' + pal.core[0] + ',' + pal.core[1] + ',' + pal.core[2] + ',0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(x, y, r * 5, 0, Math.PI * 2);
+                ctx.fill();
+                ctx.fillStyle = 'rgba(255,255,255,' + a + ')';
+                ctx.beginPath();
+                ctx.arc(x, y, r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+        },
 
         _createPlanets: function () {
             this.planets = [];
-            var usedTypes = [];
 
             for (var i = 0; i < BG_CFG.PLANET_COUNT; i++) {
-                var available = PLANET_PALETTES.filter(function (p) {
-                    return usedTypes.indexOf(p.type) === -1;
-                });
-                if (available.length === 0) available = PLANET_PALETTES;
-
-                var pal = pick(available);
-                usedTypes.push(pal.type);
-
-                var radius = rand(45, 110);
+                var pal = this._nextPlanetPalette();
+                // Уменьшен радиус: 30–70 (было 45–100)
+                var radius = rand(30, 70);
                 var tex = this._createPlanetTexture(radius, pal);
                 var sprite = new PIXI.Sprite(tex);
                 sprite.anchor.set(0.5);
-                sprite.x = rand(-radius, this.W + radius);
+                sprite.x = rand(radius * 2, this.W - radius * 2);
                 sprite.y = rand(this.H * 0.05, this.H * 0.7);
-                sprite.alpha = rand(0.85, 1.0);
+                sprite.alpha = rand(0.9, 1.0);
 
                 this.layer.addChild(sprite);
 
@@ -356,134 +348,117 @@
                     sprite: sprite,
                     radius: radius,
                     vx: rand(-0.08, 0.08),
-                    vy: rand(0.01, 0.04),
-                    rot: rand(0, Math.PI * 2),
-                    rotSpeed: rand(-0.0004, 0.0004)
+                    vy: rand(0.01, 0.04)
                 });
+
+                console.log('[Background] Планета:', pal.type, 'radius:', Math.round(radius));
             }
         },
 
+        _nextPlanetPalette: function () {
+            var available = PLANET_PALETTES.filter(function (p) {
+                return this._usedPlanetTypes.indexOf(p.type) === -1;
+            }.bind(this));
+            if (available.length === 0) { this._usedPlanetTypes = []; available = PLANET_PALETTES; }
+            var pal = pick(available);
+            this._usedPlanetTypes.push(pal.type);
+            return pal;
+        },
+
         _createPlanetTexture: function (radius, pal) {
-            // Размер холста с запасом для кольца и атмосферы
-            var texSize = Math.ceil(radius * 3.2);
+            var texSize = Math.ceil(radius * BG_CFG.PLANET_TEX_MUL);
             var canvas = document.createElement('canvas');
             canvas.width = texSize;
             canvas.height = texSize;
             var ctx = canvas.getContext('2d');
 
+            ctx.clearRect(0, 0, texSize, texSize);
+
             var cx = texSize / 2;
             var cy = texSize / 2;
 
-            // ============================================================
-            // 1. АТМОСФЕРНЫЙ ОРЕОЛ (внешний)
-            // ============================================================
-            var atmoGrad = ctx.createRadialGradient(cx, cy, radius * 0.9, cx, cy, radius * 1.5);
-            atmoGrad.addColorStop(0, pal.atmosphere + '00');
-            atmoGrad.addColorStop(0.4, pal.atmosphere + '40');
-            atmoGrad.addColorStop(0.7, pal.atmosphere + '20');
-            atmoGrad.addColorStop(1, pal.atmosphere + '00');
+            // Атмосфера (дальний ореол)
+            var atmoOuter = radius * 1.5;
+            var atmoGrad = ctx.createRadialGradient(cx, cy, radius * 0.8, cx, cy, atmoOuter);
+            atmoGrad.addColorStop(0, pal.atmosphere);
+            atmoGrad.addColorStop(0.5, this._fadeColor(pal.atmosphere, 0.25));
+            atmoGrad.addColorStop(1, this._fadeColor(pal.atmosphere, 0));
             ctx.fillStyle = atmoGrad;
             ctx.beginPath();
-            ctx.arc(cx, cy, radius * 1.5, 0, Math.PI * 2);
+            ctx.arc(cx, cy, atmoOuter, 0, Math.PI * 2);
             ctx.fill();
 
-            // ============================================================
-            // 2. КОЛЬЦО СЗАДИ (если есть)
-            // ============================================================
+            // Кольцо сзади
             if (pal.hasRing && pal.ringColor) {
                 ctx.save();
                 ctx.translate(cx, cy);
                 ctx.rotate(-0.35);
                 ctx.scale(1, 0.22);
-
-                // Основное кольцо
                 ctx.beginPath();
                 ctx.arc(0, 0, radius * 1.7, Math.PI, Math.PI * 2);
                 ctx.strokeStyle = pal.ringColor;
                 ctx.lineWidth = radius * 0.18;
                 ctx.stroke();
-
-                // Дополнительные полосы
                 for (var r = 0; r < 3; r++) {
                     ctx.beginPath();
-                    var rOff = radius * (1.55 + r * 0.1);
-                    ctx.arc(0, 0, rOff, Math.PI, Math.PI * 2);
-                    ctx.strokeStyle = 'rgba(255,255,255,' + (0.15 - r * 0.04) + ')';
-                    ctx.lineWidth = radius * 0.04;
+                    ctx.arc(0, 0, radius * (1.58 + r * 0.07), Math.PI, Math.PI * 2);
+                    ctx.strokeStyle = 'rgba(255,240,220,' + (0.2 - r * 0.05) + ')';
+                    ctx.lineWidth = radius * 0.025;
                     ctx.stroke();
                 }
-
                 ctx.restore();
             }
 
-            // ============================================================
-            // 3. ОСНОВНОЙ КРУГ ПЛАНЕТЫ
-            // ============================================================
-
-            // Базовый градиент (свет сверху-слева)
+            // Основной круг
             var bodyGrad = ctx.createRadialGradient(
                 cx - radius * 0.35, cy - radius * 0.35, radius * 0.1,
                 cx, cy, radius
             );
-            bodyGrad.addColorStop(0, pal.base[pal.base.length - 1]);
-            bodyGrad.addColorStop(0.4, pal.base[pal.base.length - 2] || pal.base[0]);
-            bodyGrad.addColorStop(0.75, pal.base[pal.base.length - 3] || pal.base[0]);
+            bodyGrad.addColorStop(0, pal.base[3]);
+            bodyGrad.addColorStop(0.4, pal.base[2]);
+            bodyGrad.addColorStop(0.75, pal.base[1]);
             bodyGrad.addColorStop(1, pal.base[0]);
-
             ctx.beginPath();
             ctx.arc(cx, cy, radius, 0, Math.PI * 2);
             ctx.fillStyle = bodyGrad;
             ctx.fill();
 
-            // ============================================================
-            // 4. КОНТИНЕНТЫ / ПОЛОСЫ (внутри планеты)
-            // ============================================================
+            // Поверхность
             ctx.save();
             ctx.beginPath();
             ctx.arc(cx, cy, radius, 0, Math.PI * 2);
             ctx.clip();
 
             if (pal.type === 'gas') {
-                // Газовый гигант — горизонтальные полосы
-                var bands = 10;
-                for (var b = 0; b < bands; b++) {
-                    var by = cy - radius + (b * radius * 2 / bands);
-                    var bh = (radius * 2) / bands;
-                    var col = pal.base[b % pal.base.length];
-                    ctx.fillStyle = col;
-                    ctx.globalAlpha = rand(0.3, 0.7);
+                for (var b = 0; b < 12; b++) {
+                    var by = cy - radius + (b * radius * 2 / 12);
+                    var bh = (radius * 2) / 12;
+                    ctx.fillStyle = pal.base[b % pal.base.length];
+                    ctx.globalAlpha = rand(0.4, 0.7);
                     ctx.fillRect(cx - radius, by, radius * 2, bh);
                 }
-
-                // Пятно-шторм (как Красное Пятно Юпитера)
-                ctx.globalAlpha = 0.6;
-                var stormX = cx + rand(-radius * 0.4, radius * 0.4);
-                var stormY = cy + rand(-radius * 0.3, radius * 0.3);
-                var stormGrad = ctx.createRadialGradient(stormX, stormY, 0, stormX, stormY, radius * 0.3);
-                stormGrad.addColorStop(0, pal.base[0]);
-                stormGrad.addColorStop(1, 'rgba(0,0,0,0)');
-                ctx.fillStyle = stormGrad;
+                ctx.globalAlpha = 0.55;
+                var sx = cx + rand(-radius * 0.3, radius * 0.3);
+                var sy = cy + rand(-radius * 0.2, radius * 0.2);
+                var sg = ctx.createRadialGradient(sx, sy, 0, sx, sy, radius * 0.3);
+                sg.addColorStop(0, pal.base[0]);
+                sg.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = sg;
                 ctx.beginPath();
-                ctx.ellipse(stormX, stormY, radius * 0.3, radius * 0.2, 0, 0, Math.PI * 2);
+                ctx.ellipse(sx, sy, radius * 0.3, radius * 0.16, 0, 0, Math.PI * 2);
                 ctx.fill();
-
             } else if (pal.land) {
-                // Планета с континентами
-                var continents = 8;
-                for (var c = 0; c < continents; c++) {
-                    var col2 = pick(pal.land);
-                    var contX = cx + rand(-radius * 0.7, radius * 0.7);
-                    var contY = cy + rand(-radius * 0.7, radius * 0.7);
-                    var contR = rand(radius * 0.15, radius * 0.4);
-
-                    // Неровное пятно — через несколько кругов
-                    var pieces = 5;
-                    for (var p = 0; p < pieces; p++) {
+                for (var c = 0; c < 10; c++) {
+                    var col = pick(pal.land);
+                    var contX = cx + rand(-radius * 0.65, radius * 0.65);
+                    var contY = cy + rand(-radius * 0.65, radius * 0.65);
+                    var contR = rand(radius * 0.12, radius * 0.32);
+                    for (var p = 0; p < 6; p++) {
                         var px = contX + rand(-contR * 0.5, contR * 0.5);
                         var py = contY + rand(-contR * 0.5, contR * 0.5);
-                        var pr = contR * rand(0.4, 0.8);
-                        ctx.fillStyle = col2;
-                        ctx.globalAlpha = rand(0.6, 0.9);
+                        var pr = contR * rand(0.4, 0.9);
+                        ctx.fillStyle = col;
+                        ctx.globalAlpha = rand(0.7, 0.95);
                         ctx.beginPath();
                         ctx.arc(px, py, pr, 0, Math.PI * 2);
                         ctx.fill();
@@ -494,126 +469,107 @@
             ctx.globalAlpha = 1;
             ctx.restore();
 
-            // ============================================================
-            // 5. ОБЛАКА
-            // ============================================================
+            // Облака
             if (pal.cloud) {
                 ctx.save();
                 ctx.beginPath();
                 ctx.arc(cx, cy, radius, 0, Math.PI * 2);
                 ctx.clip();
-
-                var clouds = 12;
-                for (var cl = 0; cl < clouds; cl++) {
-                    var cloudX = cx + rand(-radius, radius);
-                    var cloudY = cy + rand(-radius, radius);
-                    var cloudR = rand(radius * 0.15, radius * 0.35);
-
+                for (var cl = 0; cl < 15; cl++) {
+                    var cloudX = cx + rand(-radius * 0.9, radius * 0.9);
+                    var cloudY = cy + rand(-radius * 0.9, radius * 0.9);
+                    var cloudR = rand(radius * 0.1, radius * 0.25);
                     ctx.fillStyle = pal.cloud;
                     ctx.globalAlpha = rand(0.15, 0.35);
                     ctx.beginPath();
-                    ctx.ellipse(cloudX, cloudY, cloudR, cloudR * 0.4, rand(0, Math.PI), 0, Math.PI * 2);
+                    ctx.ellipse(cloudX, cloudY, cloudR, cloudR * 0.35, rand(0, Math.PI), 0, Math.PI * 2);
                     ctx.fill();
                 }
-
                 ctx.globalAlpha = 1;
                 ctx.restore();
             }
 
-            // ============================================================
-            // 6. ТЕНЬ (справа-снизу)
-            // ============================================================
+            // Тень
             ctx.save();
             ctx.beginPath();
             ctx.arc(cx, cy, radius, 0, Math.PI * 2);
             ctx.clip();
-
             var shadowGrad = ctx.createRadialGradient(
-                cx + radius * 0.4, cy + radius * 0.4, radius * 0.2,
-                cx + radius * 0.3, cy + radius * 0.3, radius * 1.4
+                cx + radius * 0.45, cy + radius * 0.45, radius * 0.15,
+                cx, cy, radius * 1.1
             );
             shadowGrad.addColorStop(0, 'rgba(0,0,0,0)');
-            shadowGrad.addColorStop(0.5, 'rgba(0,0,0,0.15)');
-            shadowGrad.addColorStop(0.85, 'rgba(0,0,0,0.6)');
-            shadowGrad.addColorStop(1, 'rgba(0,0,0,0.9)');
-
+            shadowGrad.addColorStop(0.6, 'rgba(0,0,0,0.2)');
+            shadowGrad.addColorStop(0.9, 'rgba(0,0,0,0.65)');
+            shadowGrad.addColorStop(1, 'rgba(0,0,0,0.85)');
             ctx.fillStyle = shadowGrad;
             ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
             ctx.restore();
 
-            // ============================================================
-            // 7. БЛИК СВЕТА (сверху-слева)
-            // ============================================================
+            // Блик
             ctx.save();
             ctx.beginPath();
             ctx.arc(cx, cy, radius, 0, Math.PI * 2);
             ctx.clip();
-
-            var highlightGrad = ctx.createRadialGradient(
+            var highGrad = ctx.createRadialGradient(
                 cx - radius * 0.4, cy - radius * 0.4, 0,
                 cx - radius * 0.4, cy - radius * 0.4, radius * 0.9
             );
-            highlightGrad.addColorStop(0, 'rgba(255,255,255,0.4)');
-            highlightGrad.addColorStop(0.5, 'rgba(255,255,255,0.1)');
-            highlightGrad.addColorStop(1, 'rgba(255,255,255,0)');
-
-            ctx.fillStyle = highlightGrad;
+            highGrad.addColorStop(0, 'rgba(255,255,255,0.4)');
+            highGrad.addColorStop(0.5, 'rgba(255,255,255,0.1)');
+            highGrad.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = highGrad;
             ctx.fillRect(cx - radius, cy - radius, radius * 2, radius * 2);
             ctx.restore();
 
-            // ============================================================
-            // 8. КОЛЬЦО СПЕРЕДИ (если есть)
-            // ============================================================
+            // Кольцо спереди
             if (pal.hasRing && pal.ringColor) {
                 ctx.save();
                 ctx.translate(cx, cy);
                 ctx.rotate(-0.35);
                 ctx.scale(1, 0.22);
-
                 ctx.beginPath();
                 ctx.arc(0, 0, radius * 1.7, 0, Math.PI);
                 ctx.strokeStyle = pal.ringColor;
                 ctx.lineWidth = radius * 0.18;
                 ctx.stroke();
-
                 for (var r2 = 0; r2 < 3; r2++) {
                     ctx.beginPath();
-                    var rOff2 = radius * (1.55 + r2 * 0.1);
-                    ctx.arc(0, 0, rOff2, 0, Math.PI);
-                    ctx.strokeStyle = 'rgba(255,255,255,' + (0.2 - r2 * 0.05) + ')';
-                    ctx.lineWidth = radius * 0.04;
+                    ctx.arc(0, 0, radius * (1.58 + r2 * 0.07), 0, Math.PI);
+                    ctx.strokeStyle = 'rgba(255,240,220,' + (0.25 - r2 * 0.06) + ')';
+                    ctx.lineWidth = radius * 0.025;
                     ctx.stroke();
                 }
-
                 ctx.restore();
             }
 
             return PIXI.Texture.from(canvas);
         },
 
-        // ============================================================
-        // КОМЕТЫ
-        // ============================================================
+        _fadeColor: function (rgba, factor) {
+            var match = rgba.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)(?:,\s*([\d.]+))?\)/);
+            if (!match) return rgba;
+            var a = match[4] !== undefined ? parseFloat(match[4]) : 1;
+            return 'rgba(' + match[1] + ',' + match[2] + ',' + match[3] + ',' + (a * factor) + ')';
+        },
 
         _spawnComet: function () {
             var fromLeft = Math.random() < 0.5;
             var startX = fromLeft ? rand(-50, this.W * 0.4) : rand(this.W * 0.6, this.W + 50);
             var angle = (fromLeft ? rand(30, 55) : rand(125, 150)) * Math.PI / 180;
             var speed = rand(3, 6);
-
             var cometColor = pick([0xFFD280, 0x64C8BD, 0xFB7E87, 0x8CC4FF]);
-            var cometColorRGB = this._hexToRGBArray(cometColor);
+            var rgb = [(cometColor >> 16) & 0xff, (cometColor >> 8) & 0xff, cometColor & 0xff];
 
-            // Создаём текстуру кометы (светящееся ядро)
             var canvas = document.createElement('canvas');
             canvas.width = 40;
             canvas.height = 40;
             var ctx = canvas.getContext('2d');
             var grad = ctx.createRadialGradient(20, 20, 0, 20, 20, 20);
             grad.addColorStop(0, 'rgba(255,255,255,1)');
-            grad.addColorStop(0.3, 'rgba(' + cometColorRGB + ',0.9)');
-            grad.addColorStop(0.7, 'rgba(' + cometColorRGB + ',0.3)');
-            grad.addColorStop(1, 'rgba(' + cometColorRGB + ',0)');
+            grad.addColorStop(0.3, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.9)');
+            grad.addColorStop(0.7, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0.3)');
+            grad.addColorStop(1, 'rgba(' + rgb[0] + ',' + rgb[1] + ',' + rgb[2] + ',0)');
             ctx.fillStyle = grad;
             ctx.fillRect(0, 0, 40, 40);
 
@@ -637,48 +593,30 @@
             });
         },
 
-        _hexToRGBArray: function (hex) {
-            var r = (hex >> 16) & 0xff;
-            var g = (hex >> 8) & 0xff;
-            var b = hex & 0xff;
-            return r + ',' + g + ',' + b;
-        },
-
-        // ============================================================
-        // ОБНОВЛЕНИЕ
-        // ============================================================
-
         update: function (k) {
-            // Туманности
             for (var i = 0; i < this.nebulas.length; i++) {
                 var n = this.nebulas[i];
                 n.sprite.x += n.vx * k;
                 n.sprite.y += n.vy * k;
-
                 if (n.sprite.x < -n.size) n.sprite.x = this.W + n.size;
                 if (n.sprite.x > this.W + n.size) n.sprite.x = -n.size;
                 if (n.sprite.y < -n.size) n.sprite.y = this.H + n.size;
                 if (n.sprite.y > this.H + n.size) n.sprite.y = -n.size;
             }
 
-            // Планеты
             for (var j = 0; j < this.planets.length; j++) {
                 var p = this.planets[j];
                 p.sprite.x += p.vx * k;
                 p.sprite.y += p.vy * k;
-                p.rot += p.rotSpeed * k;
-                // Планеты не вращаются (там сложная текстура), только сдвигаются
-
-                if (p.sprite.y - p.radius * 1.5 > this.H) {
-                    p.sprite.y = -p.radius * 1.5;
-                    p.sprite.x = rand(-p.radius, this.W + p.radius);
+                if (p.sprite.y - p.radius * 2.5 > this.H) {
+                    p.sprite.y = -p.radius * 2.5;
+                    p.sprite.x = rand(p.radius * 2, this.W - p.radius * 2);
                     p.vx = rand(-0.08, 0.08);
                 }
-                if (p.sprite.x < -p.radius * 2) p.sprite.x = this.W + p.radius * 2;
-                if (p.sprite.x > this.W + p.radius * 2) p.sprite.x = -p.radius * 2;
+                if (p.sprite.x < -p.radius * 2.5) p.sprite.x = this.W + p.radius * 2.5;
+                if (p.sprite.x > this.W + p.radius * 2.5) p.sprite.x = -p.radius * 2.5;
             }
 
-            // Кометы
             this._cometTimer -= k;
             if (this._cometTimer <= 0) {
                 this._spawnComet();
@@ -690,40 +628,35 @@
                 comet.head.x += comet.vx * k;
                 comet.head.y += comet.vy * k;
 
-                // След из частиц
                 comet.trailTimer -= k;
                 if (comet.trailTimer <= 0 && !IS_MOBILE) {
                     comet.trailTimer = 2;
-                    var trailParticle = new PIXI.Graphics();
-                    trailParticle.beginFill(comet.color, 0.6);
-                    trailParticle.drawCircle(0, 0, rand(1, 2.5));
-                    trailParticle.endFill();
-                    trailParticle.x = comet.head.x;
-                    trailParticle.y = comet.head.y;
-                    trailParticle._life = 1;
-                    this.layer.addChild(trailParticle);
-                    comet.trail.push(trailParticle);
+                    var tp = new PIXI.Graphics();
+                    tp.beginFill(comet.color, 0.6);
+                    tp.drawCircle(0, 0, rand(1, 2.5));
+                    tp.endFill();
+                    tp.x = comet.head.x;
+                    tp.y = comet.head.y;
+                    tp._life = 1;
+                    this.layer.addChild(tp);
+                    comet.trail.push(tp);
                 }
 
                 for (var t = comet.trail.length - 1; t >= 0; t--) {
-                    var tp = comet.trail[t];
-                    tp._life -= 0.03 * k;
-                    tp.alpha = tp._life * 0.6;
-                    tp.scale.set(tp._life);
-                    if (tp._life <= 0) {
-                        this.layer.removeChild(tp);
-                        tp.destroy();
+                    var part = comet.trail[t];
+                    part._life -= 0.03 * k;
+                    part.alpha = part._life * 0.6;
+                    part.scale.set(part._life);
+                    if (part._life <= 0) {
+                        this.layer.removeChild(part);
+                        part.destroy();
                         comet.trail.splice(t, 1);
                     }
                 }
 
-                if (comet.head.y > this.H + 100 ||
-                    comet.head.x < -100 ||
-                    comet.head.x > this.W + 100) {
+                if (comet.head.y > this.H + 100 || comet.head.x < -100 || comet.head.x > this.W + 100) {
                     for (var tt = 0; tt < comet.trail.length; tt++) {
-                        if (comet.trail[tt].parent) {
-                            this.layer.removeChild(comet.trail[tt]);
-                        }
+                        if (comet.trail[tt].parent) this.layer.removeChild(comet.trail[tt]);
                         comet.trail[tt].destroy();
                     }
                     this.layer.removeChild(comet.head);
@@ -734,6 +667,6 @@
         }
     };
 
-    console.log('[Background] Модуль загружен (v0.7.0 — реалистичные туманности)');
+    console.log('[Background] Модуль загружен (v0.8.1)');
 
 })();
