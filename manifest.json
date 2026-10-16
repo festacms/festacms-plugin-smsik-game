@@ -1,0 +1,37 @@
+{
+  "slug": "smsik-game",
+  "type": "module",
+  "name": "🚀 Смсик: Космическая доставка",
+  "version": "0.1.0",
+  "author": "FestaCMS",
+  "license": "MIT",
+  "description": "Игра для страницы 404: помоги Смсику доставить радость сквозь галактику.",
+
+  "min_cms_version": "1.0.0",
+  "min_php_version": "7.4",
+
+  "entry_point": "404.php",
+  "admin_url": "admin.php",
+
+  "tables": [
+    "smsik_scores"
+  ],
+
+  "settings": {
+    "enabled": true,
+    "allow_mobile": true,
+    "allow_sound": false,
+    "leaderboard_size": 10
+  },
+
+  "update": {
+    "enabled": true,
+    "source": "github",
+    "repo": "festacms/festacms-plugin-smsik-game",
+    "branch": "main",
+    "manifest_url": "https://raw.githubusercontent.com/festacms/festacms-plugin-smsik-game/main/manifest.json"
+  },
+
+  "repository": "https://github.com/festacms/festacms-plugin-smsik-game",
+  "issues": "https://github.com/festacms/festacms-plugin-smsik-game/issues"
+}
