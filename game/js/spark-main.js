@@ -2,10 +2,9 @@
  * FestaCMS — Спарк: Космическая Доставка
  * Точка входа JS (автозапуск игры)
  *
- * v0.6.0:
- *   - Инициализация Audio и UI
- *   - Запуск игры через SmsikGame.Main
- *   - Обратная совместимость через window.FestaPixiGame
+ * v0.10.1:
+ *   - Автозапуск музыки после первого клика
+ *   - Принудительный resume() AudioContext
  */
 
 (function () {
@@ -33,17 +32,14 @@
                 return null;
             }
 
-            // Ждём загрузки спрайтов
             var waitSprites = window.FestaSprites
                 ? window.FestaSprites.load()
                 : Promise.resolve();
 
             return waitSprites.then(function () {
-                // Скрываем старый canvas (если остался от legacy)
                 var oldCanvas = stage.querySelector('canvas');
                 if (oldCanvas) oldCanvas.style.display = 'none';
 
-                // Создаём игру
                 if (!SmsikGame.PixiGame) {
                     console.error('[Main] Класс PixiGame не найден. Проверь подключение spark-core.js');
                     return null;
@@ -58,19 +54,11 @@
             });
         },
 
-        // ============================================================
-        // ОСТАНОВКА (если нужно)
-        // ============================================================
-
         stop: function () {
             if (SmsikGame.Main.game) {
                 SmsikGame.Main.game.running = false;
             }
         },
-
-        // ============================================================
-        // ПЕРЕЗАПУСК
-        // ============================================================
 
         restart: function () {
             if (SmsikGame.Main.game && SmsikGame.Main.game.restart) {
@@ -82,7 +70,6 @@
     // ============================================================
     // === ОБРАТНАЯ СОВМЕСТИМОСТЬ =================================
     // ============================================================
-    // Старые вызовы window.FestaPixiGame.start() продолжают работать
 
     window.FestaPixiGame = {
         start: function () {
@@ -106,17 +93,20 @@
         if (SmsikGame.Audio && SmsikGame.Audio.init) {
             SmsikGame.Audio.init();
 
-            // Вешаем первый клик для "оживления" AudioContext
-            // (браузеры требуют взаимодействия пользователя)
-            var resumeOnce = function () {
-                if (SmsikGame.Audio && SmsikGame.Audio.resume) {
+            // Вешаем первый клик: resume + startMusic
+            var startAudioOnce = function () {
+                if (SmsikGame.Audio) {
                     SmsikGame.Audio.resume();
+                    setTimeout(function () {
+                        SmsikGame.Audio.startMusic();
+                    }, 50);
                 }
-                document.removeEventListener('click', resumeOnce);
-                document.removeEventListener('touchstart', resumeOnce);
+                document.removeEventListener('click', startAudioOnce);
+                document.removeEventListener('touchstart', startAudioOnce);
+                console.log('[Main] Первое взаимодействие — звук активирован');
             };
-            document.addEventListener('click', resumeOnce);
-            document.addEventListener('touchstart', resumeOnce);
+            document.addEventListener('click', startAudioOnce);
+            document.addEventListener('touchstart', startAudioOnce);
         }
 
         // 2. Инициализируем UI
@@ -125,12 +115,11 @@
         }
 
         // 3. Запускаем игру через 1 секунду
-        // (даём время старому коду "уйти" и DOM стабилизироваться)
         setTimeout(function () {
             SmsikGame.Main.start();
         }, 1000);
     });
 
-    console.log('[Main] Модуль загружен (v0.6.0)');
+    console.log('[Main] Модуль загружен (v0.10.1)');
 
 })();
