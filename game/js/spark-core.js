@@ -2,11 +2,12 @@
  * FestaCMS — Спарк: Космическая Доставка
  * Игровая логика (PixiGame)
  *
- * v0.6.2:
- *   - Явные zIndex для правильных слоёв
- *   - sortableChildren = true
- *   - Игрок, HUD и пули не перекрываются фоном после resize
- *   - Подключён модуль космического фона (SmsikGame.Background)
+ * v0.17.0:
+ *   - Адаптивные размеры через SmsikGame.scale()
+ *   - Два стика на мобильных (движение + стрельба)
+ *   - Автострельба при удержании правого стика
+ *   - Переработка touch-событий (левая/правая половина)
+ *   - zIndex-слои
  */
 
 (function () {
@@ -18,31 +19,44 @@
     var randInt = SmsikGame.utils.randInt;
     var clamp   = SmsikGame.utils.clamp;
     var pick    = SmsikGame.utils.pick;
+    var scale   = SmsikGame.scale;
 
     var CFG       = SmsikGame.CFG;
     var IS_MOBILE = SmsikGame.IS_MOBILE;
 
-    // ============================================================
-    // === Z-ИНДЕКСЫ СЛОЁВ ========================================
-    // ============================================================
-    // Чем больше число — тем выше слой (поверх всего)
-    // ============================================================
-
-    var Z = {
-        BG_SPRITE:     0,     // градиентный фон
-        STARS:         1,     // звёзды
-        BACKGROUND:    2,     // туманности, планеты, кометы
-        ITEMS:         5,     // враги, бонусы, сердечки
-        BULLETS:       6,     // наши пули + вражеские
-        PARTICLES:     8,     // взрывы, искры
-        PLAYER:       10,     // Смсик + свечение + пушка
-        TEXTS:        15,     // всплывающие +X очков
-        HUD:          20,     // HUD (очки, жизни, FPS)
-        FLASH:       999      // финальная вспышка
+    // Адаптивные размеры (кэшируем — чтобы не считать каждый кадр)
+    var PS  = scale(CFG.PLAYER_SIZE);            // размер игрока
+    var BS  = scale(CFG.BULLET_SIZE * 6);        // размер пули
+    var EBS = scale(CFG.ENEMY_BULLET_SIZE);      // размер вражеской пули
+    var HR  = scale(CFG.HEART_RADIUS);           // радиус сердечка
+    var HS  = scale(CFG.HEART_SIZE);             // размер сердечка
+    var STK = {                                  // стики
+        RADIUS:        scale(CFG.STICK_RADIUS),
+        KNOB:          scale(CFG.STICK_KNOB_RADIUS),
+        MARGIN:        scale(CFG.STICK_MARGIN),
+        DEADZONE:      scale(CFG.STICK_DEADZONE),
     };
 
     // ============================================================
-    // === КОНВЕРТАЦИЯ СПРАЙТОВ SVG → PIXI.TEXTURE ================
+    // === Z-ИНДЕКСЫ СЛОЁВ ========================================
+    // ============================================================
+
+    var Z = {
+        BG_SPRITE:     0,
+        STARS:         1,
+        BACKGROUND:    2,
+        ITEMS:         5,
+        BULLETS:       6,
+        PARTICLES:     8,
+        PLAYER:       10,
+        TEXTS:        15,
+        HUD:          20,
+        STICKS:       50,
+        FLASH:       999
+    };
+
+    // ============================================================
+    // === КОНВЕРТАЦИЯ СПРАЙТОВ ===================================
     // ============================================================
 
     function convertSpritesToTextures() {
@@ -82,14 +96,12 @@
         this.lives = CFG.MAX_LIVES;
         this.speedMul = 1;
 
-        // Оружие
         this.weaponActive = false;
         this.weaponTimer = 0;
         this.weaponMaxTimer = CFG.WEAPON_DURATION;
         this.fireCooldown = 0;
         this.fireHeld = false;
 
-        // Игрок
         this.player = null;
         this.gunSprite = null;
         this.playerContainer = null;
@@ -99,7 +111,6 @@
         this.glowTexture = null;
         this.playerHitTimer = 0;
 
-        // Объекты
         this.items = [];
         this.bullets = [];
         this.enemyBullets = [];
@@ -111,16 +122,32 @@
         this._powerupTimer = 5 * 60;
         this._heartTimer = rand(CFG.HEART_INTERVAL_MIN, CFG.HEART_INTERVAL_MAX);
 
-        // Управление
+        // Управление десктопа
         this.pointer = { x: 0, active: false };
         this.keys = { left: false, right: false };
-        this.touch = { active: false, lastX: 0, pointerId: null };
 
-        // FPS
+        // === ДВА СТИКА (мобильные) ===
+        this.leftStick = {
+            active: false,
+            pointerId: null,
+            baseX: 0, baseY: 0,       // центр стика (неподвижный)
+            knobX: 0, knobY: 0,       // позиция шайбы
+            dx: 0, dy: 0,             // смещение (-1..1)
+            container: null,
+            knob: null,
+        };
+        this.rightStick = {
+            active: false,
+            pointerId: null,
+            baseX: 0, baseY: 0,
+            knobX: 0, knobY: 0,
+            dx: 0, dy: 0,
+            container: null,
+            knob: null,
+        };
+
         this._fps = 0;
         this._fpsFrames = 0;
-
-        // HUD
         this.hud = {};
 
         this._boundResize = this._onResize.bind(this);
@@ -130,7 +157,6 @@
     }
 
     PixiGame.prototype._init = function () {
-        // === Pixi Application ===
         this.app = new PIXI.Application({
             width: window.innerWidth,
             height: window.innerHeight,
@@ -153,10 +179,8 @@
         this.W = this.app.screen.width;
         this.H = this.app.screen.height;
 
-        // === ВКЛЮЧАЕМ СОРТИРОВКУ ПО zIndex ===
         this.app.stage.sortableChildren = true;
 
-        // === Скрываем DOM старой версии ===
         var hideSelectors = [
             '.starfall-hud',
             '.starfall-fire-btn',
@@ -170,15 +194,12 @@
             }
         }.bind(this));
 
-        // === Текстуры ===
         this.textures = convertSpritesToTextures();
-        console.log('[PixiGame] Загружено текстур:', Object.keys(this.textures).length);
+        console.log('[PixiGame] Текстур:', Object.keys(this.textures).length);
 
-        // === Создаём всё (в порядке zIndex) ===
         this._createBackground();
         this._createParticleLayer();
 
-        // Космический фон (туманности, планеты, кометы)
         if (SmsikGame.Background) {
             SmsikGame.Background.init(this.app, this.W, this.H);
         }
@@ -186,20 +207,23 @@
         this._createPlayer();
         this._createHud();
         this._createFlashOverlay();
+
+        if (IS_MOBILE) {
+            this._createSticks();
+        }
+
         this._attachEvents();
 
-        // === Блокируем скролл страницы ===
         if (SmsikGame.UI) SmsikGame.UI.lockScroll(true);
 
-        // === Запуск ===
         this.running = true;
         this.app.ticker.add(this._boundTick);
 
-        console.log('[PixiGame] v0.6.2 запущена (zIndex-слои)');
+        console.log('[PixiGame] v0.17.0 запущена. Экран:', SmsikGame.SCREEN.type);
     };
 
     // ============================================================
-    // === ФОН (градиент + звёзды) ================================
+    // === ФОН ====================================================
     // ============================================================
 
     PixiGame.prototype._createBackground = function () {
@@ -219,10 +243,9 @@
         this.bgSprite = new PIXI.Sprite(tex);
         this.bgSprite.width = this.W;
         this.bgSprite.height = this.H;
-        this.bgSprite.zIndex = Z.BG_SPRITE;   // ← слой 0
+        this.bgSprite.zIndex = Z.BG_SPRITE;
         this.app.stage.addChild(this.bgSprite);
 
-        // Звёзды
         this.stars = [];
         var starCount = Math.min(Math.floor(this.W * this.H / 30000), 300);
         for (var i = 0; i < starCount; i++) {
@@ -233,7 +256,7 @@
             star.x = Math.random() * this.W;
             star.y = Math.random() * this.H;
             star._speed = rand(0.1, 0.5);
-            star.zIndex = Z.STARS;   // ← слой 1
+            star.zIndex = Z.STARS;
             this.app.stage.addChild(star);
             this.stars.push(star);
         }
@@ -241,7 +264,7 @@
 
     PixiGame.prototype._createParticleLayer = function () {
         this.particleLayer = new PIXI.Container();
-        this.particleLayer.zIndex = Z.PARTICLES;   // ← слой 8
+        this.particleLayer.zIndex = Z.PARTICLES;
         this.app.stage.addChild(this.particleLayer);
     };
 
@@ -251,7 +274,7 @@
         this.flashOverlay.drawRect(0, 0, this.W, this.H);
         this.flashOverlay.endFill();
         this.flashOverlay.alpha = 0;
-        this.flashOverlay.zIndex = Z.FLASH;   // ← слой 999
+        this.flashOverlay.zIndex = Z.FLASH;
         this.app.stage.addChild(this.flashOverlay);
     };
 
@@ -293,7 +316,7 @@
     };
 
     // ============================================================
-    // === ИГРОК + ПУШКА ==========================================
+    // === ИГРОК ==================================================
     // ============================================================
 
     PixiGame.prototype._createPlayer = function () {
@@ -305,36 +328,33 @@
 
         this.playerContainer = new PIXI.Container();
         this.playerContainer.x = this.W / 2;
-        this.playerContainer.y = this.H - 70;
-        this.playerContainer.zIndex = Z.PLAYER;   // ← слой 10
+        this.playerContainer.y = this.H - scale(70);
+        this.playerContainer.zIndex = Z.PLAYER;
         this.app.stage.addChild(this.playerContainer);
 
-        // Свечение
         this.glowTexture = this._createGlowTexture();
         this.playerGlow = new PIXI.Sprite(this.glowTexture);
         this.playerGlow.anchor.set(0.5);
-        this.playerGlow.width = CFG.PLAYER_SIZE * 3;
-        this.playerGlow.height = CFG.PLAYER_SIZE * 3;
+        this.playerGlow.width = PS * 3;
+        this.playerGlow.height = PS * 3;
         this.playerGlow.tint = 0x64c8bd;
         this.playerGlow.alpha = 0.5;
         this.playerContainer.addChild(this.playerGlow);
 
-        // Смсик
         this.player = new PIXI.Sprite(tex);
         this.player.anchor.set(0.5);
-        this.player.width = CFG.PLAYER_SIZE * 2.4;
-        this.player.height = CFG.PLAYER_SIZE * 2.4;
+        this.player.width = PS * 2.4;
+        this.player.height = PS * 2.4;
         this.playerContainer.addChild(this.player);
 
-        // Пушка
         var gunTex = this.textures.gun;
         if (gunTex) {
             this.gunSprite = new PIXI.Sprite(gunTex);
             this.gunSprite.anchor.set(0.5);
-            this.gunSprite.width = CFG.PLAYER_SIZE * 1.2;
-            this.gunSprite.height = CFG.PLAYER_SIZE * 1.2;
+            this.gunSprite.width = PS * 1.2;
+            this.gunSprite.height = PS * 1.2;
             this.gunSprite.x = 0;
-            this.gunSprite.y = CFG.PLAYER_SIZE * 0.6;
+            this.gunSprite.y = PS * 0.6;
             this.gunSprite.visible = false;
             this.playerContainer.addChild(this.gunSprite);
         }
@@ -344,64 +364,62 @@
     // ============================================================
 
     PixiGame.prototype._createHud = function () {
+        var fontSize = scale(20);
         var hudStyle = {
             fontFamily: 'Arial, sans-serif',
-            fontSize: 20,
+            fontSize: fontSize,
             fill: 0x64C8BD,
             fontWeight: 'bold',
         };
 
-        // Очки
         this.hud.score = new PIXI.Text('Очки: 0', hudStyle);
-        this.hud.score.x = this.W - 200;
-        this.hud.score.y = 15;
+        this.hud.score.x = this.W - scale(200);
+        this.hud.score.y = scale(15);
         this.hud.score.zIndex = Z.HUD;
         this.app.stage.addChild(this.hud.score);
 
-        // Сердечки
         this.hud.hearts = [];
         this.hud.heartsContainer = new PIXI.Container();
-        this.hud.heartsContainer.x = 15;
-        this.hud.heartsContainer.y = 15;
+        this.hud.heartsContainer.x = scale(15);
+        this.hud.heartsContainer.y = scale(15);
         this.hud.heartsContainer.zIndex = Z.HUD;
         this.app.stage.addChild(this.hud.heartsContainer);
 
         var heartTex = this.textures.heart;
         if (heartTex) {
+            var hSize = scale(28);
+            var hGap = scale(32);
             for (var i = 0; i < CFG.MAX_LIVES; i++) {
                 var h = new PIXI.Sprite(heartTex);
-                h.width = 28;
-                h.height = 28;
-                h.x = i * 32;
+                h.width = hSize;
+                h.height = hSize;
+                h.x = i * hGap;
                 h.y = 0;
                 this.hud.heartsContainer.addChild(h);
                 this.hud.hearts.push(h);
             }
         }
 
-        // Уровень
         this.hud.level = new PIXI.Text('Ур. 1', hudStyle);
-        this.hud.level.x = 15;
-        this.hud.level.y = 50;
+        this.hud.level.x = scale(15);
+        this.hud.level.y = scale(50);
         this.hud.level.zIndex = Z.HUD;
         this.app.stage.addChild(this.hud.level);
 
-        // FPS
         this.hud.fps = new PIXI.Text('FPS: --', {
             fontFamily: 'monospace',
-            fontSize: 14,
+            fontSize: scale(14),
             fill: 0xffd280,
             fontWeight: 'bold',
         });
-        this.hud.fps.x = this.W - 100;
-        this.hud.fps.y = 50;
+        this.hud.fps.x = this.W - scale(100);
+        this.hud.fps.y = scale(50);
         this.hud.fps.zIndex = Z.HUD;
         this.app.stage.addChild(this.hud.fps);
 
-        // Оружие + прогресс-бар
         this.hud.weaponContainer = new PIXI.Container();
-        this.hud.weaponContainer.x = this.W / 2 - 80;
-        this.hud.weaponContainer.y = 15;
+        this.hud.weaponContainer.x = this.W / 2 - scale(80);
+        this.hud.weaponContainer.y = scale(15);
         this.hud.weaponContainer.visible = false;
         this.hud.weaponContainer.zIndex = Z.HUD;
         this.app.stage.addChild(this.hud.weaponContainer);
@@ -409,8 +427,8 @@
         var gunHudTex = this.textures.gun;
         if (gunHudTex) {
             var gunHud = new PIXI.Sprite(gunHudTex);
-            gunHud.width = 36;
-            gunHud.height = 36;
+            gunHud.width = scale(36);
+            gunHud.height = scale(36);
             gunHud.x = 0;
             gunHud.y = 0;
             this.hud.weaponContainer.addChild(gunHud);
@@ -418,17 +436,17 @@
 
         this.hud.weaponTimerText = new PIXI.Text('15.0s', {
             fontFamily: 'Arial',
-            fontSize: 18,
+            fontSize: scale(18),
             fill: 0xffd280,
             fontWeight: 'bold',
         });
-        this.hud.weaponTimerText.x = 42;
-        this.hud.weaponTimerText.y = 8;
+        this.hud.weaponTimerText.x = scale(42);
+        this.hud.weaponTimerText.y = scale(8);
         this.hud.weaponContainer.addChild(this.hud.weaponTimerText);
 
         this.hud.weaponBarBg = new PIXI.Graphics();
         this.hud.weaponBarBg.beginFill(0x1a2a3a, 0.8);
-        this.hud.weaponBarBg.drawRoundedRect(0, 30, 120, 8, 4);
+        this.hud.weaponBarBg.drawRoundedRect(0, scale(30), scale(120), scale(8), scale(4));
         this.hud.weaponBarBg.endFill();
         this.hud.weaponContainer.addChild(this.hud.weaponBarBg);
 
@@ -448,16 +466,121 @@
         else if (ratio > 0.25) color = 0xffd280;
         else color = 0xff4040;
 
-        var width = 120 * ratio;
+        var width = scale(120) * ratio;
         if (width < 1) width = 1;
 
         this.hud.weaponBarFill.beginFill(color);
-        this.hud.weaponBarFill.drawRoundedRect(0, 30, width, 8, 4);
+        this.hud.weaponBarFill.drawRoundedRect(0, scale(30), width, scale(8), scale(4));
         this.hud.weaponBarFill.endFill();
     };
 
     // ============================================================
-    // === ОБРАБОТЧИКИ ============================================
+    // === 🕹 ДВА СТИКА (мобильные)
+    // ============================================================
+
+    PixiGame.prototype._createSticks = function () {
+        var self = this;
+
+        // === Левый стик (движение) ===
+        this.leftStick.baseX = this.W * CFG.STICK_LEFT_X_RATIO;
+        this.leftStick.baseY = this.H * CFG.STICK_LEFT_Y_RATIO;
+        this.leftStick.knobX = this.leftStick.baseX;
+        this.leftStick.knobY = this.leftStick.baseY;
+
+        this.leftStick.container = new PIXI.Container();
+        this.leftStick.container.x = this.leftStick.baseX;
+        this.leftStick.container.y = this.leftStick.baseY;
+        this.leftStick.container.zIndex = Z.STICKS;
+        this.leftStick.container.alpha = 0.35;   // полупрозрачный
+        this.app.stage.addChild(this.leftStick.container);
+
+        // Фоновый круг
+        var leftBg = new PIXI.Graphics();
+        leftBg.beginFill(0x64C8BD, 0.15);
+        leftBg.lineStyle(scale(2), 0x64C8BD, 0.6);
+        leftBg.drawCircle(0, 0, STK.RADIUS);
+        leftBg.endFill();
+        this.leftStick.container.addChild(leftBg);
+
+        // Шайба
+        this.leftStick.knob = new PIXI.Graphics();
+        this.leftStick.knob.beginFill(0x64C8BD, 0.7);
+        this.leftStick.knob.drawCircle(0, 0, STK.KNOB);
+        this.leftStick.knob.endFill();
+        this.leftStick.container.addChild(this.leftStick.knob);
+
+        // Иконка направления (стрелки влево-вправо)
+        var leftIcon = new PIXI.Text('◄ ►', {
+            fontFamily: 'Arial',
+            fontSize: scale(20),
+            fill: 0x64C8BD,
+            fontWeight: 'bold',
+        });
+        leftIcon.anchor.set(0.5);
+        leftIcon.y = STK.RADIUS + scale(15);
+        leftIcon.alpha = 0.6;
+        this.leftStick.container.addChild(leftIcon);
+
+        // === Правый стик (стрельба) ===
+        this.rightStick.baseX = this.W * CFG.STICK_RIGHT_X_RATIO;
+        this.rightStick.baseY = this.H * CFG.STICK_RIGHT_Y_RATIO;
+        this.rightStick.knobX = this.rightStick.baseX;
+        this.rightStick.knobY = this.rightStick.baseY;
+
+        this.rightStick.container = new PIXI.Container();
+        this.rightStick.container.x = this.rightStick.baseX;
+        this.rightStick.container.y = this.rightStick.baseY;
+        this.rightStick.container.zIndex = Z.STICKS;
+        this.rightStick.container.alpha = 0.35;
+        this.rightStick.container.visible = false;  // показываем только при оружии
+        this.app.stage.addChild(this.rightStick.container);
+
+        var rightBg = new PIXI.Graphics();
+        rightBg.beginFill(0xffd280, 0.15);
+        rightBg.lineStyle(scale(2), 0xffd280, 0.6);
+        rightBg.drawCircle(0, 0, STK.RADIUS);
+        rightBg.endFill();
+        this.rightStick.container.addChild(rightBg);
+
+        this.rightStick.knob = new PIXI.Graphics();
+        this.rightStick.knob.beginFill(0xffd280, 0.7);
+        this.rightStick.knob.drawCircle(0, 0, STK.KNOB);
+        this.rightStick.knob.endFill();
+        this.rightStick.container.addChild(this.rightStick.knob);
+
+        // Иконка огня
+        var rightIcon = new PIXI.Text('🔥', {
+            fontFamily: 'Arial',
+            fontSize: scale(20),
+            fill: 0xffd280,
+        });
+        rightIcon.anchor.set(0.5);
+        rightIcon.y = STK.RADIUS + scale(15);
+        rightIcon.alpha = 0.6;
+        this.rightStick.container.addChild(rightIcon);
+    };
+
+    // Обновление позиций стиков при resize
+    PixiGame.prototype._updateSticksPosition = function () {
+        if (!IS_MOBILE) return;
+
+        if (this.leftStick.container) {
+            this.leftStick.baseX = this.W * CFG.STICK_LEFT_X_RATIO;
+            this.leftStick.baseY = this.H * CFG.STICK_LEFT_Y_RATIO;
+            this.leftStick.container.x = this.leftStick.baseX;
+            this.leftStick.container.y = this.leftStick.baseY;
+        }
+
+        if (this.rightStick.container) {
+            this.rightStick.baseX = this.W * CFG.STICK_RIGHT_X_RATIO;
+            this.rightStick.baseY = this.H * CFG.STICK_RIGHT_Y_RATIO;
+            this.rightStick.container.x = this.rightStick.baseX;
+            this.rightStick.container.y = this.rightStick.baseY;
+        }
+    };
+
+    // ============================================================
+    // === ОБРАБОТЧИКИ СОБЫТИЙ ====================================
     // ============================================================
 
     PixiGame.prototype._attachEvents = function () {
@@ -465,7 +588,7 @@
 
         window.addEventListener('resize', this._boundResize);
 
-        // Мышка
+        // === Мышка (десктоп) ===
         document.addEventListener('mousemove', function (e) {
             self.pointer.x = e.clientX;
             self.pointer.active = true;
@@ -473,7 +596,7 @@
         document.addEventListener('mousedown', function () { self.fireHeld = true; });
         document.addEventListener('mouseup', function () { self.fireHeld = false; });
 
-        // Клавиатура
+        // === Клавиатура (десктоп) ===
         document.addEventListener('keydown', function (e) {
             var k = e.key;
             if (k === 'ArrowLeft' || k === 'a' || k === 'A' || k === 'ф' || k === 'Ф') self.keys.left = true;
@@ -487,61 +610,157 @@
             if (k === ' ') self.fireHeld = false;
         });
 
-        // Тач
+        // === 🕹 ТАЧ-СОБЫТИЯ (два стика) ===
         if (IS_MOBILE) {
-            document.addEventListener('touchstart', function (e) {
-                if (e.target.closest('button')) return;
-                var t = e.touches[0];
-                if (!t) return;
-                self.touch.active = true;
-                self.touch.lastX = t.clientX;
-                self.touch.pointerId = t.identifier;
-            }, { passive: true });
+            this.stage.addEventListener('touchstart', this._onTouchStart.bind(this), { passive: false });
+            this.stage.addEventListener('touchmove', this._onTouchMove.bind(this), { passive: false });
+            this.stage.addEventListener('touchend', this._onTouchEnd.bind(this), { passive: false });
+            this.stage.addEventListener('touchcancel', this._onTouchEnd.bind(this), { passive: false });
+        }
+    };
 
-            document.addEventListener('touchmove', function (e) {
-                if (!self.touch.active) return;
-                var t = null;
-                for (var i = 0; i < e.touches.length; i++) {
-                    if (e.touches[i].identifier === self.touch.pointerId) {
-                        t = e.touches[i];
-                        break;
-                    }
+    // Определяем, какой стик задействован (по половине экрана)
+    PixiGame.prototype._onTouchStart = function (e) {
+        if (!this.running) return;
+        if (e.target.closest('button')) return;
+
+        for (var i = 0; i < e.changedTouches.length; i++) {
+            var t = e.changedTouches[i];
+            var isLeftSide = t.clientX < this.W / 2;
+
+            if (isLeftSide && !this.leftStick.active) {
+                // Левый стик — движение
+                this.leftStick.active = true;
+                this.leftStick.pointerId = t.identifier;
+                this.leftStick.touchStartX = t.clientX;
+                this.leftStick.touchStartY = t.clientY;
+                if (this.leftStick.container) {
+                    this.leftStick.container.alpha = 0.85;  // ярче при касании
                 }
-                if (!t) return;
-                var dx = t.clientX - self.touch.lastX;
-                self.touch.lastX = t.clientX;
+            } else if (!isLeftSide && !this.rightStick.active) {
+                // Правый стик — стрельба (только если есть оружие)
+                this.rightStick.active = true;
+                this.rightStick.pointerId = t.identifier;
+                this.rightStick.touchStartX = t.clientX;
+                this.rightStick.touchStartY = t.clientY;
 
-                if (self.playerContainer) {
-                    var margin = CFG.PLAYER_SIZE / 2 + 4;
-                    self.playerContainer.x = clamp(
-                        self.playerContainer.x + dx * CFG.SWIPE_SENSITIVITY,
-                        margin,
-                        self.W - margin
-                    );
-                    self.playerVx = dx * CFG.SWIPE_SENSITIVITY;
+                // Сразу стреляем при касании (если оружие есть)
+                if (this.weaponActive) {
+                    this.fireHeld = true;
                 }
-            }, { passive: true });
 
-            document.addEventListener('touchend', function () {
-                self.touch.active = false;
-                self.touch.pointerId = null;
-            });
+                if (this.rightStick.container) {
+                    this.rightStick.container.alpha = 0.85;
+                }
+            }
+        }
+
+        if (this.leftStick.active || this.rightStick.active) {
+            e.preventDefault();
+        }
+    };
+
+    PixiGame.prototype._onTouchMove = function (e) {
+        if (!this.running) return;
+
+        for (var i = 0; i < e.changedTouches.length; i++) {
+            var t = e.changedTouches[i];
+
+            // Левый стик — движение
+            if (this.leftStick.active && t.identifier === this.leftStick.pointerId) {
+                var dx = t.clientX - this.leftStick.touchStartX;
+                var dy = t.clientY - this.leftStick.touchStartY;
+
+                // Ограничиваем длину до STK.RADIUS
+                var len = Math.sqrt(dx * dx + dy * dy);
+                if (len > STK.RADIUS) {
+                    dx = (dx / len) * STK.RADIUS;
+                    dy = (dy / len) * STK.RADIUS;
+                }
+
+                // Позиция шайбы (от центра стика)
+                if (this.leftStick.knob) {
+                    this.leftStick.knob.x = dx;
+                    this.leftStick.knob.y = dy;
+                }
+
+                // Нормализованное значение -1..1
+                this.leftStick.dx = dx / STK.RADIUS;
+                this.leftStick.dy = dy / STK.RADIUS;
+
+                // Мёртвая зона
+                if (Math.abs(this.leftStick.dx) < STK.DEADZONE / STK.RADIUS) {
+                    this.leftStick.dx = 0;
+                }
+            }
+
+            // Правый стик — стрельба
+            if (this.rightStick.active && t.identifier === this.rightStick.pointerId) {
+                var rdx = t.clientX - this.rightStick.touchStartX;
+                var rdy = t.clientY - this.rightStick.touchStartY;
+
+                var rlen = Math.sqrt(rdx * rdx + rdy * rdy);
+                if (rlen > STK.RADIUS) {
+                    rdx = (rdx / rlen) * STK.RADIUS;
+                    rdy = (rdy / rlen) * STK.RADIUS;
+                }
+
+                if (this.rightStick.knob) {
+                    this.rightStick.knob.x = rdx;
+                    this.rightStick.knob.y = rdy;
+                }
+
+                this.rightStick.dx = rdx / STK.RADIUS;
+                this.rightStick.dy = rdy / STK.RADIUS;
+            }
+        }
+
+        e.preventDefault();
+    };
+
+    PixiGame.prototype._onTouchEnd = function (e) {
+        for (var i = 0; i < e.changedTouches.length; i++) {
+            var t = e.changedTouches[i];
+
+            // Левый стик отпущен
+            if (this.leftStick.active && t.identifier === this.leftStick.pointerId) {
+                this.leftStick.active = false;
+                this.leftStick.pointerId = null;
+                this.leftStick.dx = 0;
+                this.leftStick.dy = 0;
+                if (this.leftStick.knob) {
+                    this.leftStick.knob.x = 0;
+                    this.leftStick.knob.y = 0;
+                }
+                if (this.leftStick.container) {
+                    this.leftStick.container.alpha = 0.35;
+                }
+            }
+
+            // Правый стик отпущен
+            if (this.rightStick.active && t.identifier === this.rightStick.pointerId) {
+                this.rightStick.active = false;
+                this.rightStick.pointerId = null;
+                this.rightStick.dx = 0;
+                this.rightStick.dy = 0;
+                this.fireHeld = false;
+                if (this.rightStick.knob) {
+                    this.rightStick.knob.x = 0;
+                    this.rightStick.knob.y = 0;
+                }
+                if (this.rightStick.container) {
+                    this.rightStick.container.alpha = 0.35;
+                }
+            }
         }
     };
 
     // ============================================================
     // === RESIZE =================================================
     // ============================================================
-    // Фон НЕ пересоздаём — просто сбрасываем позиции элементов HUD.
-    // zIndex гарантирует, что слои останутся правильными.
-    // Пересоздание нужно только если размер изменился ОЧЕНЬ сильно.
-    // ============================================================
 
     PixiGame.prototype._onResize = function () {
         if (!this.app) return;
-
-        var oldW = this.W;
-        var oldH = this.H;
 
         this.app.renderer.resize(window.innerWidth, window.innerHeight);
         this.W = this.app.screen.width;
@@ -553,8 +772,8 @@
         }
 
         if (this.playerContainer) {
-            this.playerContainer.y = this.H - 70;
-            this.playerContainer.x = clamp(this.playerContainer.x, 40, this.W - 40);
+            this.playerContainer.y = this.H - scale(70);
+            this.playerContainer.x = clamp(this.playerContainer.x, PS / 2 + 4, this.W - PS / 2 - 4);
         }
 
         if (this.flashOverlay) {
@@ -565,11 +784,14 @@
         }
 
         // HUD
-        if (this.hud.score)            this.hud.score.x = this.W - 200;
-        if (this.hud.fps)              this.hud.fps.x = this.W - 100;
-        if (this.hud.weaponContainer)  this.hud.weaponContainer.x = this.W / 2 - 80;
+        if (this.hud.score)            this.hud.score.x = this.W - scale(200);
+        if (this.hud.fps)              this.hud.fps.x = this.W - scale(100);
+        if (this.hud.weaponContainer)  this.hud.weaponContainer.x = this.W / 2 - scale(80);
 
-        // Космический фон — пересоздаём ТОЛЬКО если размер изменился сильно
+        // Стики — пересчитать позиции
+        this._updateSticksPosition();
+
+        // Космический фон — пересоздаём если размер сильно изменился
         var dw = Math.abs(this.W - (this._lastBgW || 0));
         var dh = Math.abs(this.H - (this._lastBgH || 0));
 
@@ -577,7 +799,6 @@
             this._lastBgW = this.W;
             this._lastBgH = this.H;
 
-            // Удаляем старый слой фона
             if (SmsikGame.Background.layer && SmsikGame.Background.layer.parent) {
                 SmsikGame.Background.layer.parent.removeChild(SmsikGame.Background.layer);
                 SmsikGame.Background.layer.destroy({ children: true });
@@ -600,7 +821,6 @@
         var k = delta;
         this.frame++;
 
-        // FPS
         this._fpsFrames++;
         if (this._fpsFrames >= 30) {
             this._fps = Math.round(this.app.ticker.FPS);
@@ -634,11 +854,16 @@
         }
     };
 
+    // ============================================================
+    // === ИГРОК — обновление (мышь / клава / стик) ===============
+    // ============================================================
+
     PixiGame.prototype._updatePlayer = function (k) {
         if (!this.playerContainer) return;
 
-        var margin = CFG.PLAYER_SIZE / 2 + 4;
+        var margin = PS / 2 + 4;
         var keyboardActive = this.keys.left || this.keys.right;
+        var stickActive = this.leftStick.active && Math.abs(this.leftStick.dx) > 0.1;
 
         if (keyboardActive) {
             this.pointer.active = false;
@@ -646,6 +871,12 @@
             if (this.keys.right) this.playerVx += CFG.PLAYER_ACC * k;
             this.playerVx *= CFG.PLAYER_FRICTION;
             this.playerVx = clamp(this.playerVx, -CFG.PLAYER_MAX_V, CFG.PLAYER_MAX_V);
+            this.playerContainer.x += this.playerVx * k;
+        } else if (stickActive) {
+            // === ЛЕВЫЙ СТИК — движение ===
+            this.pointer.active = false;
+            var targetVx = this.leftStick.dx * CFG.PLAYER_MAX_V;
+            this.playerVx += (targetVx - this.playerVx) * 0.3 * k;
             this.playerContainer.x += this.playerVx * k;
         } else if (this.pointer.active && !IS_MOBILE) {
             var diff = this.pointer.x - this.playerContainer.x;
@@ -687,6 +918,17 @@
     // ============================================================
 
     PixiGame.prototype._updateWeapon = function (k) {
+        // Показ/скрытие правого стика в зависимости от оружия
+        if (IS_MOBILE && this.rightStick.container) {
+            if (this.weaponActive && !this.rightStick.container.visible) {
+                this.rightStick.container.visible = true;
+            } else if (!this.weaponActive && this.rightStick.container.visible) {
+                this.rightStick.container.visible = false;
+                this.rightStick.active = false;
+                this.fireHeld = false;
+            }
+        }
+
         if (this.weaponActive) {
             this.weaponTimer -= k;
 
@@ -720,11 +962,11 @@
 
         var bullet = new PIXI.Sprite(tex);
         bullet.anchor.set(0.5);
-        bullet.width = CFG.BULLET_SIZE * 6;
-        bullet.height = CFG.BULLET_SIZE * 6;
+        bullet.width = BS;
+        bullet.height = BS;
         bullet.x = this.playerContainer.x;
-        bullet.y = this.playerContainer.y - CFG.PLAYER_SIZE * 0.3;
-        bullet.zIndex = Z.BULLETS;   // ← слой 6
+        bullet.y = this.playerContainer.y - PS * 0.3;
+        bullet.zIndex = Z.BULLETS;
         this.app.stage.addChild(bullet);
 
         this.bullets.push({
@@ -747,7 +989,6 @@
     // ============================================================
 
     PixiGame.prototype._updateItems = function (k) {
-        // Спавн врагов/бонусов
         this._itemTimer -= k;
         if (this._itemTimer <= 0) {
             this._spawnItem();
@@ -756,14 +997,12 @@
             this._itemTimer = interval + rand(-8, 8);
         }
 
-        // Спавн звёзд-пауэрапов
         this._powerupTimer -= k;
         if (this._powerupTimer <= 0) {
             this._spawnPowerup();
             this._powerupTimer = rand(30 * 60, 60 * 60);
         }
 
-        // Спавн сердечек
         if (this.lives < CFG.MAX_LIVES) {
             this._heartTimer -= k;
             if (this._heartTimer <= 0) {
@@ -772,23 +1011,21 @@
             }
         }
 
-        // Обновление предметов
         for (var i = this.items.length - 1; i >= 0; i--) {
             var it = this.items[i];
             it.sprite.y += it.vy * k;
             it.sprite.x += it.vx * k;
             it.sprite.rotation += it.rotSpeed * k;
 
-            if (it.sprite.x < 20 || it.sprite.x > this.W - 20) {
+            if (it.sprite.x < scale(20) || it.sprite.x > this.W - scale(20)) {
                 it.vx *= -1;
-                it.sprite.x = clamp(it.sprite.x, 20, this.W - 20);
+                it.sprite.x = clamp(it.sprite.x, scale(20), this.W - scale(20));
             }
 
-            // Столкновение с игроком
             if (this.playerContainer && !it.hit) {
                 var dx = it.sprite.x - this.playerContainer.x;
                 var dy = it.sprite.y - this.playerContainer.y;
-                var hitDist = it.radius + CFG.PLAYER_SIZE / 2 - 6;
+                var hitDist = it.radius + PS / 2 - scale(6);
 
                 if (dx * dx + dy * dy < hitDist * hitDist) {
                     this._onItemHit(it);
@@ -800,7 +1037,7 @@
                 }
             }
 
-            if (it.sprite.y > this.H + 60) {
+            if (it.sprite.y > this.H + scale(60)) {
                 this.app.stage.removeChild(it.sprite);
                 it.sprite.destroy();
                 this.items.splice(i, 1);
@@ -837,20 +1074,20 @@
 
         var size, radius, damage, speedMul, points;
         if (type === 'bonus') {
-            size = 34; radius = 20; damage = 0; speedMul = 1.0; points = CFG.POINTS_BONUS;
+            size = scale(34); radius = scale(20); damage = 0; speedMul = 1.0; points = CFG.POINTS_BONUS;
         } else if (type === 'monster') {
-            size = 38; radius = 22; damage = 1; speedMul = 1.0; points = CFG.POINTS_ENEMY;
+            size = scale(38); radius = scale(22); damage = 1; speedMul = 1.0; points = CFG.POINTS_ENEMY;
         } else if (type === 'nlo') {
-            size = 42; radius = 24; damage = 2; speedMul = 1.2; points = CFG.POINTS_NLO;
+            size = scale(42); radius = scale(24); damage = 2; speedMul = 1.2; points = CFG.POINTS_NLO;
         } else {
-            size = 46; radius = 26; damage = 3; speedMul = 1.4; points = CFG.POINTS_DEMON;
+            size = scale(46); radius = scale(26); damage = 3; speedMul = 1.4; points = CFG.POINTS_DEMON;
         }
 
         sprite.width = size * 2.2;
         sprite.height = size * 2.2;
-        sprite.x = rand(40, this.W - 40);
-        sprite.y = -50;
-        sprite.zIndex = Z.ITEMS;   // ← слой 5
+        sprite.x = rand(scale(40), this.W - scale(40));
+        sprite.y = -scale(50);
+        sprite.zIndex = Z.ITEMS;
         this.app.stage.addChild(sprite);
 
         this.items.push({
@@ -874,10 +1111,10 @@
 
         var sprite = new PIXI.Sprite(tex);
         sprite.anchor.set(0.5);
-        sprite.width = 44 * 2.2;
-        sprite.height = 44 * 2.2;
-        sprite.x = rand(60, this.W - 60);
-        sprite.y = -50;
+        sprite.width = scale(44 * 2.2);
+        sprite.height = scale(44 * 2.2);
+        sprite.x = rand(scale(60), this.W - scale(60));
+        sprite.y = -scale(50);
         sprite.zIndex = Z.ITEMS;
         this.app.stage.addChild(sprite);
 
@@ -885,7 +1122,7 @@
             sprite: sprite,
             type: 'powerup',
             damage: 0,
-            radius: 26,
+            radius: scale(26),
             points: 0,
             vx: rand(-0.3, 0.3),
             vy: rand(1.4, 2.0),
@@ -901,10 +1138,10 @@
 
         var sprite = new PIXI.Sprite(tex);
         sprite.anchor.set(0.5);
-        sprite.width = CFG.HEART_SIZE * 2.2;
-        sprite.height = CFG.HEART_SIZE * 2.2;
-        sprite.x = rand(60, this.W - 60);
-        sprite.y = -50;
+        sprite.width = HS * 2.2;
+        sprite.height = HS * 2.2;
+        sprite.x = rand(scale(60), this.W - scale(60));
+        sprite.y = -scale(50);
         sprite.zIndex = Z.ITEMS;
         this.app.stage.addChild(sprite);
 
@@ -912,7 +1149,7 @@
             sprite: sprite,
             type: 'heart',
             damage: 0,
-            radius: CFG.HEART_RADIUS,
+            radius: HR,
             points: 0,
             vx: rand(-0.2, 0.2),
             vy: rand(CFG.HEART_FALL_SPEED_MIN, CFG.HEART_FALL_SPEED_MAX),
@@ -958,7 +1195,7 @@
                 continue;
             }
 
-            if (b.sprite.y < -30 || b.life <= 0) {
+            if (b.sprite.y < -scale(30) || b.life <= 0) {
                 this.app.stage.removeChild(b.sprite);
                 b.sprite.destroy();
                 this.bullets.splice(i, 1);
@@ -971,7 +1208,6 @@
     // ============================================================
 
     PixiGame.prototype._updateEnemyBullets = function (k) {
-        // Стрельба врагов
         for (var i = 0; i < this.items.length; i++) {
             var it = this.items[i];
             if (!it.canShoot || it.hit) continue;
@@ -984,7 +1220,6 @@
             }
         }
 
-        // Движение вражеских пуль
         for (var j = this.enemyBullets.length - 1; j >= 0; j--) {
             var eb = this.enemyBullets[j];
             eb.sprite.y += eb.vy * k;
@@ -994,7 +1229,7 @@
             if (this.playerContainer) {
                 var dx = eb.sprite.x - this.playerContainer.x;
                 var dy = eb.sprite.y - this.playerContainer.y;
-                var hitDist = eb.radius + CFG.PLAYER_SIZE / 2 - 8;
+                var hitDist = eb.radius + PS / 2 - scale(8);
                 if (dx * dx + dy * dy < hitDist * hitDist) {
                     this._onPlayerHitByBullet(eb);
                     this.app.stage.removeChild(eb.sprite);
@@ -1006,8 +1241,8 @@
                 }
             }
 
-            if (eb.sprite.y > this.H + 30 || eb.life <= 0 ||
-                eb.sprite.x < -30 || eb.sprite.x > this.W + 30) {
+            if (eb.sprite.y > this.H + scale(30) || eb.life <= 0 ||
+                eb.sprite.x < -scale(30) || eb.sprite.x > this.W + scale(30)) {
                 this.app.stage.removeChild(eb.sprite);
                 eb.sprite.destroy();
                 if (eb.glow && eb.glow.parent) eb.glow.parent.removeChild(eb.glow);
@@ -1020,10 +1255,10 @@
     PixiGame.prototype._fireEnemyBullet = function (it) {
         var bullet = new PIXI.Graphics();
         bullet.beginFill(0xff4040, 1);
-        bullet.drawCircle(0, 0, CFG.ENEMY_BULLET_SIZE);
+        bullet.drawCircle(0, 0, EBS);
         bullet.endFill();
         bullet.beginFill(0xfff0f0, 1);
-        bullet.drawCircle(0, 0, CFG.ENEMY_BULLET_SIZE * 0.4);
+        bullet.drawCircle(0, 0, EBS * 0.4);
         bullet.endFill();
         bullet.x = it.sprite.x;
         bullet.y = it.sprite.y + it.radius * 0.7;
@@ -1031,7 +1266,7 @@
 
         var glow = new PIXI.Graphics();
         glow.beginFill(0xff4040, 0.3);
-        glow.drawCircle(0, 0, CFG.ENEMY_BULLET_SIZE * 2);
+        glow.drawCircle(0, 0, EBS * 2);
         glow.endFill();
         glow.x = bullet.x;
         glow.y = bullet.y;
@@ -1045,7 +1280,7 @@
             glow: glow,
             vx: 0,
             vy: CFG.ENEMY_BULLET_SPEED,
-            radius: CFG.ENEMY_BULLET_SIZE + 2,
+            radius: EBS + scale(2),
             life: CFG.ENEMY_BULLET_LIFE,
         });
 
@@ -1103,7 +1338,7 @@
         for (var i = 0; i < count; i++) {
             var angle = Math.random() * Math.PI * 2;
             var speed = rand(speedMin, speedMax);
-            var size = rand(sizeMin, sizeMax);
+            var size = scale(rand(sizeMin, sizeMax));
 
             var p = new PIXI.Graphics();
             p.beginFill(color, 1);
@@ -1160,11 +1395,11 @@
     PixiGame.prototype._popText = function (x, y, text, color) {
         var t = new PIXI.Text(text, {
             fontFamily: 'Arial, sans-serif',
-            fontSize: 22,
+            fontSize: scale(22),
             fill: color,
             fontWeight: 'bold',
             stroke: 0x000000,
-            strokeThickness: 4,
+            strokeThickness: scale(4),
         });
         t.anchor.set(0.5);
         t.x = x;
@@ -1172,7 +1407,7 @@
         t._life = 1.2;
         t._maxLife = 1.2;
         t._vy = -1.5;
-        t.zIndex = Z.TEXTS;   // ← слой 15
+        t.zIndex = Z.TEXTS;
         this.app.stage.addChild(t);
         this.texts.push(t);
     };
@@ -1325,7 +1560,7 @@
             if (this.hud.level) this.hud.level.text = 'Ур. ' + this.level;
 
             var cx = this.playerContainer ? this.playerContainer.x : this.W / 2;
-            var cy = this.playerContainer ? this.playerContainer.y : this.H - 70;
+            var cy = this.playerContainer ? this.playerContainer.y : this.H - scale(70);
 
             this._spawnParticles(cx, cy, 0xffd280, 40, {
                 speedMin: 5, speedMax: 14, lifeMin: 1.2, lifeMax: 2.0,
@@ -1346,7 +1581,7 @@
         console.log('[PixiGame] Игра окончена. Счёт:', this.score);
 
         var cx = this.playerContainer ? this.playerContainer.x : this.W / 2;
-        var cy = this.playerContainer ? this.playerContainer.y : this.H - 70;
+        var cy = this.playerContainer ? this.playerContainer.y : this.H - scale(70);
 
         this._spawnParticles(cx, cy, 0xff4040, 40, {
             speedMin: 5, speedMax: 14, lifeMin: 1.5, lifeMax: 2.5,
@@ -1358,7 +1593,7 @@
 
         if (this.hud.score) {
             this.hud.score.text = '🏆 ' + this.score + ' очков!';
-            this.hud.score.style.fontSize = 36;
+            this.hud.score.style.fontSize = scale(36);
         }
 
         var self = this;
@@ -1425,14 +1660,14 @@
 
         if (this.playerContainer) {
             this.playerContainer.x = this.W / 2;
-            this.playerContainer.y = this.H - 70;
+            this.playerContainer.y = this.H - scale(70);
         }
         this.playerVx = 0;
         this.playerTilt = 0;
 
         if (this.gunSprite) this.gunSprite.visible = false;
         if (this.hud.weaponContainer) this.hud.weaponContainer.visible = false;
-        if (this.hud.score) this.hud.score.style.fontSize = 20;
+        if (this.hud.score) this.hud.score.style.fontSize = scale(20);
         if (this.flashOverlay) this.flashOverlay.alpha = 0;
 
         this.playerHitTimer = 0;
@@ -1441,6 +1676,29 @@
             this.playerGlow.tint = 0x64c8bd;
             this.playerGlow.alpha = 0.5;
         }
+
+        // Сброс стиков
+        if (this.leftStick.active) {
+            this.leftStick.active = false;
+            this.leftStick.dx = 0;
+            this.leftStick.dy = 0;
+            if (this.leftStick.knob) {
+                this.leftStick.knob.x = 0;
+                this.leftStick.knob.y = 0;
+            }
+            if (this.leftStick.container) this.leftStick.container.alpha = 0.35;
+        }
+        if (this.rightStick.active) {
+            this.rightStick.active = false;
+            this.rightStick.dx = 0;
+            this.rightStick.dy = 0;
+            if (this.rightStick.knob) {
+                this.rightStick.knob.x = 0;
+                this.rightStick.knob.y = 0;
+            }
+            if (this.rightStick.container) this.rightStick.container.alpha = 0.35;
+        }
+        this.fireHeld = false;
 
         this._updateScore();
         this._updateLives();
@@ -1451,6 +1709,6 @@
 
     SmsikGame.PixiGame = PixiGame;
 
-    console.log('[Core] Часть 3/3 загружена. spark-core.js собран полностью (v0.6.2)');
+    console.log('[Core] Часть 3/3 загружена. spark-core.js собран полностью (v0.17.0)');
 
 })();
